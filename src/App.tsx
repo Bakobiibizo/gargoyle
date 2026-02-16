@@ -5,12 +5,13 @@ import GraphExplorer from './components/GraphExplorer';
 import SearchBar from './components/SearchBar';
 import DedupDashboard from './components/DedupDashboard';
 import WorkflowMap from './components/WorkflowMap';
+import ChatPanel from './components/ChatPanel';
 
 // ---------------------------------------------------------------------------
 // Tab definitions
 // ---------------------------------------------------------------------------
 
-type TabId = 'entities' | 'templates' | 'graph' | 'search' | 'dedup' | 'workflows';
+type TabId = 'entities' | 'templates' | 'graph' | 'search' | 'dedup' | 'workflows' | 'chat';
 
 interface TabDef {
   id: TabId;
@@ -25,6 +26,7 @@ const TABS: TabDef[] = [
   { id: 'search', label: 'Search', icon: '\u2315' },       // telephone recorder / search-like
   { id: 'dedup', label: 'Dedup', icon: '\u2A61' },         // small contains with overline
   { id: 'workflows', label: 'Workflows', icon: '\u2B95' },  // rightwards black arrow
+  { id: 'chat', label: 'Chat', icon: '\u2B24' },              // black circle / chat bubble
 ];
 
 // ---------------------------------------------------------------------------
@@ -242,6 +244,10 @@ function App() {
 
           {activeTab === 'workflows' && (
             <WorkflowMap />
+          )}
+
+          {activeTab === 'chat' && (
+            <ChatPanel />
           )}
         </div>
       </div>
