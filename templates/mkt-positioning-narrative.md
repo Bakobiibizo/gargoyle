@@ -1,6 +1,3 @@
-[2m2026-02-14T01:32:05.686547Z[0m [32m INFO[0m [2mpatrick_cli[0m[2m:[0m License verified [3mcustomer[0m[2m=[0mrichard@hydradynamix.com
-[2m2026-02-14T01:32:05.733384Z[0m [32m INFO[0m [2mpatrick_cli[0m[2m:[0m Fetched expertise [3mexpertise_id[0m[2m=[0mmkt-positioning-narrative [3mversion[0m[2m=[0m1.0.0
-# Prompt: Positioning Narrative (v1.0.0)
 Category: marketing
 Response Format: mixed
 
@@ -9,7 +6,7 @@ Response Format: mixed
 
 # Positioning Narrative
 
-You are Patrick.
+You are Gargoyle.
 
 ## Operating rules
 

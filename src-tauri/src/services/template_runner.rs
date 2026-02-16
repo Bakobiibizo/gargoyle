@@ -105,440 +105,76 @@ pub fn get_template_definition(key: &str) -> Option<TemplateDefinition> {
                 min_count: 1,
             }],
         }),
-        // Analytics templates (Wave 2B)
-        "analytics-measurement-framework-kpi-tree" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "analytics".to_string(),
+        // Dev templates (enriched)
+        "dev-adr-writer" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "development".to_string(),
             prerequisites: vec![],
         }),
-        "analytics-dashboard-spec-scorecard" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "analytics".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
+        "dev-api-design" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "development".to_string(),
+            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
         }),
-        "analytics-cohort-LTV-CAC" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "analytics".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
+        "dev-architecture-review" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "development".to_string(),
+            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
         }),
-        "analytics-pipeline-funnel-velocity" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "analytics".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
+        "dev-test-plan" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "development".to_string(),
+            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
         }),
-        "analytics-attribution-plan-utm-governance" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "analytics".to_string(),
+        "dev-prd-to-techspec" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "development".to_string(),
+            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
+        }),
+        "dev-requirements-to-spec" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "development".to_string(),
             prerequisites: vec![],
         }),
-        "analytics-experiment-design-analysis" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "analytics".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "experiment".to_string(), min_count: 1 }],
+        "dev-db-schema" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "development".to_string(),
+            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
         }),
-        // Strategy templates (Wave 2B)
-        "strategy-ICP-JTBD" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "strategy".to_string(),
+        "dev-migration-plan" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "development".to_string(),
+            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
+        }),
+        "dev-security-threat-model" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "development".to_string(),
+            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
+        }),
+        // Org templates (enriched)
+        "org-project-charter" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "organizing".to_string(),
             prerequisites: vec![],
         }),
-        "strategy-competitive-intelligence" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "strategy".to_string(),
-            prerequisites: vec![],
+        "org-project-plan" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "organizing".to_string(),
+            prerequisites: vec![Prerequisite { entity_type: "project".to_string(), min_count: 1 }],
         }),
-        "strategy-go-to-market-one-pager" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "strategy".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "strategy-positioning-category-narrative" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "strategy".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "strategy-messaging-architecture" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "strategy".to_string(),
+        "org-decision-log" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "organizing".to_string(),
             prerequisites: vec![Prerequisite { entity_type: "decision".to_string(), min_count: 1 }],
         }),
-        "strategy-segmentation-targeting" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "strategy".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
+        "org-meeting-brief" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "organizing".to_string(),
+            prerequisites: vec![Prerequisite { entity_type: "session".to_string(), min_count: 1 }],
         }),
-        // Marketing templates (Wave 2B)
-        "mkt-content-strategy" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
+        "org-retrospective" => Some(TemplateDefinition {
+            key: key.to_string(), version: "1.0".to_string(), category: "organizing".to_string(),
+            prerequisites: vec![Prerequisite { entity_type: "session".to_string(), min_count: 1 }],
         }),
-        "mkt-editorial-calendar" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "note".to_string(), min_count: 1 }],
-        }),
-        "mkt-email-nurture-sequence" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "audience".to_string(), min_count: 1 }],
-        }),
-        "mkt-landing-page-brief" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "mkt-launch-content-pack" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "campaign".to_string(), min_count: 1 }],
-        }),
-        "mkt-messaging-matrix" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "mkt-metrics-dashboard" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
-        }),
-        "mkt-onboarding-activation" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "mkt-paid-ads-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "budget".to_string(), min_count: 1 }],
-        }),
-        "mkt-partnerships-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![],
-        }),
-        "mkt-pr-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "campaign".to_string(), min_count: 1 }],
-        }),
-        "mkt-pricing-page-copy" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "decision".to_string(), min_count: 1 }],
-        }),
-        "mkt-sales-enablement-pack" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "mkt-seo-keyword-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![],
-        }),
-        "mkt-social-distribution-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "channel".to_string(), min_count: 1 }],
-        }),
-        "mkt-website-copy" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "mkt-case-study" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "marketing".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        // Content templates (Wave 2B)
-        "content-ad-creative-concepts" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "content".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "campaign".to_string(), min_count: 1 }],
-        }),
+        // Content templates (enriched)
         "content-case-study-builder" => Some(TemplateDefinition {
             key: key.to_string(), version: "1.0".to_string(), category: "content".to_string(),
             prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "content-copywriting-longform" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "content".to_string(),
-            prerequisites: vec![],
-        }),
-        "content-copywriting-shortform" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "content".to_string(),
-            prerequisites: vec![],
         }),
         "content-creative-brief-builder" => Some(TemplateDefinition {
             key: key.to_string(), version: "1.0".to_string(), category: "content".to_string(),
             prerequisites: vec![Prerequisite { entity_type: "campaign".to_string(), min_count: 1 }],
         }),
-        "content-design-system-brand-kit" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "content".to_string(),
-            prerequisites: vec![],
-        }),
-        "content-landing-page-copy" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "content".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "content-repurposing-distribution-matrix" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "content".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "note".to_string(), min_count: 1 }],
-        }),
         "content-strategy-pillars-seo" => Some(TemplateDefinition {
             key: key.to_string(), version: "1.0".to_string(), category: "content".to_string(),
             prerequisites: vec![],
-        }),
-        "content-video-production-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "content".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "campaign".to_string(), min_count: 1 }],
-        }),
-        // Distribution templates (Wave 2B)
-        "distribution-affiliate-syndication-program" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "distribution".to_string(),
-            prerequisites: vec![],
-        }),
-        "distribution-audience-targeting-retargeting" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "distribution".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "audience".to_string(), min_count: 1 }],
-        }),
-        "distribution-channel-mix-budget" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "distribution".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "budget".to_string(), min_count: 1 }],
-        }),
-        "distribution-CRO-testing-playbook" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "distribution".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
-        }),
-        "distribution-email-newsletter-program" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "distribution".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "audience".to_string(), min_count: 1 }],
-        }),
-        "distribution-lifecycle-nurture-sequences" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "distribution".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "audience".to_string(), min_count: 1 }],
-        }),
-        "distribution-paid-search-build" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "distribution".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "budget".to_string(), min_count: 1 }],
-        }),
-        "distribution-paid-social-build" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "distribution".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "budget".to_string(), min_count: 1 }],
-        }),
-        // Dev templates (Wave 2B)
-        "dev-adr-writer" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![],
-        }),
-        "dev-api-design" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
-        }),
-        "dev-architecture-review" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
-        }),
-        "dev-cicd-design" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![],
-        }),
-        "dev-code-review" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![],
-        }),
-        "dev-code-scaffold" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
-        }),
-        "dev-db-schema" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
-        }),
-        "dev-debugging-playbook" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![],
-        }),
-        "dev-documentation-writer" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![],
-        }),
-        "dev-migration-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
-        }),
-        "dev-observability-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
-        }),
-        "dev-performance-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
-        }),
-        "dev-prd-to-techspec" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
-        }),
-        "dev-requirements-to-spec" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![],
-        }),
-        "dev-security-threat-model" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
-        }),
-        "dev-test-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "dev".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "spec".to_string(), min_count: 1 }],
-        }),
-        // Ops templates (Wave 2B)
-        "ops-project-management-sprint-system" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "ops".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "project".to_string(), min_count: 1 }],
-        }),
-        "ops-marketing-planning-budgeting" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "ops".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "budget".to_string(), min_count: 1 }],
-        }),
-        // Org templates (Wave 2B)
-        "org-project-charter" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "org".to_string(),
-            prerequisites: vec![],
-        }),
-        "org-project-plan" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "org".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "project".to_string(), min_count: 1 }],
-        }),
-        "org-decision-log" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "org".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "decision".to_string(), min_count: 1 }],
-        }),
-        "org-meeting-brief" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "org".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "session".to_string(), min_count: 1 }],
-        }),
-        "org-meeting-debrief" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "org".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "session".to_string(), min_count: 1 }],
-        }),
-        "org-retrospective" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "org".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "session".to_string(), min_count: 1 }],
-        }),
-        "org-risk-register" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "org".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "project".to_string(), min_count: 1 }],
-        }),
-        "org-status-update" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "org".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "project".to_string(), min_count: 1 }],
-        }),
-        "org-sop-builder" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "org".to_string(),
-            prerequisites: vec![],
-        }),
-        "org-knowledge-capture" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "org".to_string(),
-            prerequisites: vec![],
-        }),
-        // Event templates (Wave 2B)
-        "event-concept-brief" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "event".to_string(),
-            prerequisites: vec![],
-        }),
-        "event-program-design" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "event".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "campaign".to_string(), min_count: 1 }],
-        }),
-        "event-venue-selection" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "event".to_string(),
-            prerequisites: vec![],
-        }),
-        // Programming templates (Wave 2B)
-        "programming-master-marketing-calendar" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "programming".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "campaign".to_string(), min_count: 1 }],
-        }),
-        "programming-editorial-calendar" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "programming".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "note".to_string(), min_count: 1 }],
-        }),
-        // Wave 3C analytics advanced
-        "analytics-weekly-insights-narrative" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "analytics".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
-        }),
-        // Wave 3C strategy advanced
-        "strategy-offer-pricing-packaging" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "strategy".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "decision".to_string(), min_count: 1 }],
-        }),
-        "strategy-market-analysis-tam-sam-som" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "strategy".to_string(),
-            prerequisites: vec![],
-        }),
-        // Wave 3C distribution/social/PR/sales
-        "distribution-social-media-calendar" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "distribution".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "channel".to_string(), min_count: 1 }],
-        }),
-        "distribution-influencer-outreach" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "distribution".to_string(),
-            prerequisites: vec![],
-        }),
-        "sales-discovery-call-script" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "sales".to_string(),
-            prerequisites: vec![],
-        }),
-        "sales-demo-playbook" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "sales".to_string(),
-            prerequisites: vec![],
-        }),
-        "sales-objection-handling" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "sales".to_string(),
-            prerequisites: vec![],
-        }),
-        "sales-proposal-template" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "sales".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "sales-pipeline-management" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "sales".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
-        }),
-        "pr-press-release" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "pr".to_string(),
-            prerequisites: vec![],
-        }),
-        "pr-media-kit" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "pr".to_string(),
-            prerequisites: vec![],
-        }),
-        // Wave 3C people/legal/finance
-        "people-onboarding-checklist" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "people".to_string(),
-            prerequisites: vec![],
-        }),
-        "people-performance-review" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "people".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "legal-contract-review" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "legal".to_string(),
-            prerequisites: vec![],
-        }),
-        "legal-compliance-checklist" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "legal".to_string(),
-            prerequisites: vec![],
-        }),
-        "finance-budget-forecast" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "finance".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "budget".to_string(), min_count: 1 }],
-        }),
-        "finance-roi-calculator" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "finance".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
-        }),
-        // Wave 3C staging/release/CS/ops/product
-        "staging-launch-checklist" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "staging".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "campaign".to_string(), min_count: 1 }],
-        }),
-        "rel-release-notes" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "release".to_string(),
-            prerequisites: vec![],
-        }),
-        "rel-changelog" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "release".to_string(),
-            prerequisites: vec![],
-        }),
-        "cs-customer-success-playbook" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "cs".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "person".to_string(), min_count: 1 }],
-        }),
-        "cs-churn-prevention" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "cs".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
-        }),
-        "product-launch-maestro" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "product".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "campaign".to_string(), min_count: 1 }],
-        }),
-        "weekly-performance-review" => Some(TemplateDefinition {
-            key: key.to_string(), version: "1.0".to_string(), category: "ops".to_string(),
-            prerequisites: vec![Prerequisite { entity_type: "metric".to_string(), min_count: 1 }],
         }),
         _ => None,
     }
@@ -546,134 +182,34 @@ pub fn get_template_definition(key: &str) -> Option<TemplateDefinition> {
 
 /// All registered template keys.
 const ALL_TEMPLATE_KEYS: &[&str] = &[
-    // Original analytics (3)
+    // Analytics (3)
     "analytics-metric-tree",
     "analytics-experiment-plan",
     "analytics-anomaly-investigation",
-    // Wave 1B marketing (3)
+    // Marketing (3)
     "mkt-icp-definition",
     "mkt-competitive-intel",
     "mkt-positioning-narrative",
-    // Wave 2B analytics (6)
-    "analytics-measurement-framework-kpi-tree",
-    "analytics-dashboard-spec-scorecard",
-    "analytics-cohort-LTV-CAC",
-    "analytics-pipeline-funnel-velocity",
-    "analytics-attribution-plan-utm-governance",
-    "analytics-experiment-design-analysis",
-    // Wave 2B strategy (6)
-    "strategy-ICP-JTBD",
-    "strategy-competitive-intelligence",
-    "strategy-go-to-market-one-pager",
-    "strategy-positioning-category-narrative",
-    "strategy-messaging-architecture",
-    "strategy-segmentation-targeting",
-    // Wave 2B marketing (17)
-    "mkt-content-strategy",
-    "mkt-editorial-calendar",
-    "mkt-email-nurture-sequence",
-    "mkt-landing-page-brief",
-    "mkt-launch-content-pack",
-    "mkt-messaging-matrix",
-    "mkt-metrics-dashboard",
-    "mkt-onboarding-activation",
-    "mkt-paid-ads-plan",
-    "mkt-partnerships-plan",
-    "mkt-pr-plan",
-    "mkt-pricing-page-copy",
-    "mkt-sales-enablement-pack",
-    "mkt-seo-keyword-plan",
-    "mkt-social-distribution-plan",
-    "mkt-website-copy",
-    "mkt-case-study",
-    // Wave 2B content (10)
-    "content-ad-creative-concepts",
-    "content-case-study-builder",
-    "content-copywriting-longform",
-    "content-copywriting-shortform",
-    "content-creative-brief-builder",
-    "content-design-system-brand-kit",
-    "content-landing-page-copy",
-    "content-repurposing-distribution-matrix",
-    "content-strategy-pillars-seo",
-    "content-video-production-plan",
-    // Wave 2B distribution (8)
-    "distribution-affiliate-syndication-program",
-    "distribution-audience-targeting-retargeting",
-    "distribution-channel-mix-budget",
-    "distribution-CRO-testing-playbook",
-    "distribution-email-newsletter-program",
-    "distribution-lifecycle-nurture-sequences",
-    "distribution-paid-search-build",
-    "distribution-paid-social-build",
-    // Wave 2B dev (16)
+    // Development (9)
     "dev-adr-writer",
     "dev-api-design",
     "dev-architecture-review",
-    "dev-cicd-design",
-    "dev-code-review",
-    "dev-code-scaffold",
-    "dev-db-schema",
-    "dev-debugging-playbook",
-    "dev-documentation-writer",
-    "dev-migration-plan",
-    "dev-observability-plan",
-    "dev-performance-plan",
+    "dev-test-plan",
     "dev-prd-to-techspec",
     "dev-requirements-to-spec",
+    "dev-db-schema",
+    "dev-migration-plan",
     "dev-security-threat-model",
-    "dev-test-plan",
-    // Wave 2B ops (2)
-    "ops-project-management-sprint-system",
-    "ops-marketing-planning-budgeting",
-    // Wave 2B org (10)
+    // Organizing (5)
     "org-project-charter",
     "org-project-plan",
     "org-decision-log",
     "org-meeting-brief",
-    "org-meeting-debrief",
     "org-retrospective",
-    "org-risk-register",
-    "org-status-update",
-    "org-sop-builder",
-    "org-knowledge-capture",
-    // Wave 2B event (3)
-    "event-concept-brief",
-    "event-program-design",
-    "event-venue-selection",
-    // Wave 2B programming (2)
-    "programming-master-marketing-calendar",
-    "programming-editorial-calendar",
-    // Wave 3C analytics advanced (1)
-    "analytics-weekly-insights-narrative",
-    // Wave 3C strategy advanced (2)
-    "strategy-offer-pricing-packaging",
-    "strategy-market-analysis-tam-sam-som",
-    // Wave 3C distribution/social/PR/sales (10)
-    "distribution-social-media-calendar",
-    "distribution-influencer-outreach",
-    "sales-discovery-call-script",
-    "sales-demo-playbook",
-    "sales-objection-handling",
-    "sales-proposal-template",
-    "sales-pipeline-management",
-    "pr-press-release",
-    "pr-media-kit",
-    // Wave 3C people/legal/finance (6)
-    "people-onboarding-checklist",
-    "people-performance-review",
-    "legal-contract-review",
-    "legal-compliance-checklist",
-    "finance-budget-forecast",
-    "finance-roi-calculator",
-    // Wave 3C staging/release/CS/ops/product (6)
-    "staging-launch-checklist",
-    "rel-release-notes",
-    "rel-changelog",
-    "cs-customer-success-playbook",
-    "cs-churn-prevention",
-    "product-launch-maestro",
-    "weekly-performance-review",
+    // Content (3)
+    "content-case-study-builder",
+    "content-creative-brief-builder",
+    "content-strategy-pillars-seo",
 ];
 
 /// Returns all registered template definitions.
@@ -1703,445 +1239,9 @@ struct GenericTemplateConfig {
 
 /// Returns the generic template configuration for a given template key.
 /// This maps each Wave 2B+ template to its output entity type and configuration.
-fn generic_template_config(key: &str) -> Option<GenericTemplateConfig> {
-    match key {
-        // Analytics → metric or spec entities
-        "analytics-measurement-framework-kpi-tree" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Measurement Framework",
-        }),
-        "analytics-dashboard-spec-scorecard" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Dashboard Spec",
-        }),
-        "analytics-cohort-LTV-CAC" => Some(GenericTemplateConfig {
-            entity_type: "metric", default_status: "active", entity_count: 3,
-            title_prefix: "Cohort Analysis",
-        }),
-        "analytics-pipeline-funnel-velocity" => Some(GenericTemplateConfig {
-            entity_type: "metric", default_status: "active", entity_count: 3,
-            title_prefix: "Pipeline Velocity",
-        }),
-        "analytics-attribution-plan-utm-governance" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Attribution Plan",
-        }),
-        "analytics-experiment-design-analysis" => Some(GenericTemplateConfig {
-            entity_type: "result", default_status: "draft", entity_count: 1,
-            title_prefix: "Experiment Analysis",
-        }),
-        // Strategy → decision or note entities
-        "strategy-ICP-JTBD" => Some(GenericTemplateConfig {
-            entity_type: "person", default_status: "active", entity_count: 3,
-            title_prefix: "ICP JTBD",
-        }),
-        "strategy-competitive-intelligence" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 2,
-            title_prefix: "Competitive Intel",
-        }),
-        "strategy-go-to-market-one-pager" => Some(GenericTemplateConfig {
-            entity_type: "decision", default_status: "proposed", entity_count: 1,
-            title_prefix: "GTM Strategy",
-        }),
-        "strategy-positioning-category-narrative" => Some(GenericTemplateConfig {
-            entity_type: "decision", default_status: "proposed", entity_count: 1,
-            title_prefix: "Positioning Narrative",
-        }),
-        "strategy-messaging-architecture" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Messaging Architecture",
-        }),
-        "strategy-segmentation-targeting" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 2,
-            title_prefix: "Segmentation",
-        }),
-        // Marketing → note, spec, playbook, campaign entities
-        "mkt-content-strategy" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Content Strategy",
-        }),
-        "mkt-editorial-calendar" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Editorial Calendar",
-        }),
-        "mkt-email-nurture-sequence" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Email Nurture",
-        }),
-        "mkt-landing-page-brief" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Landing Page Brief",
-        }),
-        "mkt-launch-content-pack" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 3,
-            title_prefix: "Launch Content",
-        }),
-        "mkt-messaging-matrix" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Messaging Matrix",
-        }),
-        "mkt-metrics-dashboard" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Marketing Dashboard",
-        }),
-        "mkt-onboarding-activation" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Onboarding Activation",
-        }),
-        "mkt-paid-ads-plan" => Some(GenericTemplateConfig {
-            entity_type: "campaign", default_status: "planning", entity_count: 1,
-            title_prefix: "Paid Ads Plan",
-        }),
-        "mkt-partnerships-plan" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Partnerships Plan",
-        }),
-        "mkt-pr-plan" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "PR Plan",
-        }),
-        "mkt-pricing-page-copy" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Pricing Page Copy",
-        }),
-        "mkt-sales-enablement-pack" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 3,
-            title_prefix: "Sales Enablement",
-        }),
-        "mkt-seo-keyword-plan" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "SEO Keyword Plan",
-        }),
-        "mkt-social-distribution-plan" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Social Distribution",
-        }),
-        "mkt-website-copy" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 3,
-            title_prefix: "Website Copy",
-        }),
-        "mkt-case-study" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Case Study",
-        }),
-        // Content → note or spec entities
-        "content-ad-creative-concepts" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 3,
-            title_prefix: "Ad Creative",
-        }),
-        "content-case-study-builder" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Case Study",
-        }),
-        "content-copywriting-longform" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Longform Copy",
-        }),
-        "content-copywriting-shortform" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 3,
-            title_prefix: "Shortform Copy",
-        }),
-        "content-creative-brief-builder" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Creative Brief",
-        }),
-        "content-design-system-brand-kit" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Design System",
-        }),
-        "content-landing-page-copy" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Landing Page Copy",
-        }),
-        "content-repurposing-distribution-matrix" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Repurposing Matrix",
-        }),
-        "content-strategy-pillars-seo" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Content Pillars SEO",
-        }),
-        "content-video-production-plan" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Video Production",
-        }),
-        // Distribution → playbook or spec entities
-        "distribution-affiliate-syndication-program" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Affiliate Program",
-        }),
-        "distribution-audience-targeting-retargeting" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Audience Targeting",
-        }),
-        "distribution-channel-mix-budget" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Channel Mix Budget",
-        }),
-        "distribution-CRO-testing-playbook" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "CRO Testing",
-        }),
-        "distribution-email-newsletter-program" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Email Newsletter",
-        }),
-        "distribution-lifecycle-nurture-sequences" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Lifecycle Nurture",
-        }),
-        "distribution-paid-search-build" => Some(GenericTemplateConfig {
-            entity_type: "campaign", default_status: "planning", entity_count: 1,
-            title_prefix: "Paid Search",
-        }),
-        "distribution-paid-social-build" => Some(GenericTemplateConfig {
-            entity_type: "campaign", default_status: "planning", entity_count: 1,
-            title_prefix: "Paid Social",
-        }),
-        // Dev → spec, playbook, or note entities
-        "dev-adr-writer" => Some(GenericTemplateConfig {
-            entity_type: "decision", default_status: "proposed", entity_count: 1,
-            title_prefix: "ADR",
-        }),
-        "dev-api-design" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "API Design",
-        }),
-        "dev-architecture-review" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Architecture Review",
-        }),
-        "dev-cicd-design" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "CI/CD Design",
-        }),
-        "dev-code-review" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Code Review",
-        }),
-        "dev-code-scaffold" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Code Scaffold",
-        }),
-        "dev-db-schema" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "DB Schema",
-        }),
-        "dev-debugging-playbook" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Debugging Playbook",
-        }),
-        "dev-documentation-writer" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Documentation",
-        }),
-        "dev-migration-plan" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Migration Plan",
-        }),
-        "dev-observability-plan" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Observability Plan",
-        }),
-        "dev-performance-plan" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Performance Plan",
-        }),
-        "dev-prd-to-techspec" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Tech Spec",
-        }),
-        "dev-requirements-to-spec" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Requirements Spec",
-        }),
-        "dev-security-threat-model" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Threat Model",
-        }),
-        "dev-test-plan" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Test Plan",
-        }),
-        // Ops → project or spec entities
-        "ops-project-management-sprint-system" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Sprint System",
-        }),
-        "ops-marketing-planning-budgeting" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Marketing Budget Plan",
-        }),
-        // Org → note, project, or spec entities
-        "org-project-charter" => Some(GenericTemplateConfig {
-            entity_type: "project", default_status: "planning", entity_count: 1,
-            title_prefix: "Project Charter",
-        }),
-        "org-project-plan" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Project Plan",
-        }),
-        "org-decision-log" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Decision Log",
-        }),
-        "org-meeting-brief" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Meeting Brief",
-        }),
-        "org-meeting-debrief" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Meeting Debrief",
-        }),
-        "org-retrospective" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Retrospective",
-        }),
-        "org-risk-register" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Risk Register",
-        }),
-        "org-status-update" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Status Update",
-        }),
-        "org-sop-builder" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "SOP",
-        }),
-        "org-knowledge-capture" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Knowledge Capture",
-        }),
-        // Event → note or spec entities
-        "event-concept-brief" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Event Concept",
-        }),
-        "event-program-design" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Event Program",
-        }),
-        "event-venue-selection" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Venue Selection",
-        }),
-        // Programming → note or spec entities
-        "programming-master-marketing-calendar" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Master Calendar",
-        }),
-        "programming-editorial-calendar" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Editorial Calendar",
-        }),
-        // Wave 3C analytics advanced
-        "analytics-weekly-insights-narrative" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Weekly Insights",
-        }),
-        // Wave 3C strategy advanced
-        "strategy-offer-pricing-packaging" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Pricing Strategy",
-        }),
-        "strategy-market-analysis-tam-sam-som" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Market Analysis",
-        }),
-        // Wave 3C distribution/social/PR/sales
-        "distribution-social-media-calendar" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Social Calendar",
-        }),
-        "distribution-influencer-outreach" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Influencer Outreach",
-        }),
-        "sales-discovery-call-script" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Discovery Script",
-        }),
-        "sales-demo-playbook" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Demo Playbook",
-        }),
-        "sales-objection-handling" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Objection Handling",
-        }),
-        "sales-proposal-template" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Proposal",
-        }),
-        "sales-pipeline-management" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Pipeline Management",
-        }),
-        "pr-press-release" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Press Release",
-        }),
-        "pr-media-kit" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Media Kit",
-        }),
-        // Wave 3C people/legal/finance
-        "people-onboarding-checklist" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Onboarding Checklist",
-        }),
-        "people-performance-review" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Performance Review",
-        }),
-        "legal-contract-review" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Contract Review",
-        }),
-        "legal-compliance-checklist" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Compliance Checklist",
-        }),
-        "finance-budget-forecast" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Budget Forecast",
-        }),
-        "finance-roi-calculator" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "ROI Calculator",
-        }),
-        // Wave 3C staging/release/CS/ops/product
-        "staging-launch-checklist" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Launch Checklist",
-        }),
-        "rel-release-notes" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Release Notes",
-        }),
-        "rel-changelog" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Changelog",
-        }),
-        "cs-customer-success-playbook" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "CS Playbook",
-        }),
-        "cs-churn-prevention" => Some(GenericTemplateConfig {
-            entity_type: "playbook", default_status: "draft", entity_count: 1,
-            title_prefix: "Churn Prevention",
-        }),
-        "product-launch-maestro" => Some(GenericTemplateConfig {
-            entity_type: "spec", default_status: "draft", entity_count: 1,
-            title_prefix: "Launch Maestro",
-        }),
-        "weekly-performance-review" => Some(GenericTemplateConfig {
-            entity_type: "note", default_status: "draft", entity_count: 1,
-            title_prefix: "Weekly Performance",
-        }),
-        _ => None,
-    }
+fn generic_template_config(_key: &str) -> Option<GenericTemplateConfig> {
+    // All remaining templates have enriched generators; generic config is no longer needed.
+    None
 }
 
 /// Generic template op generator for Wave 2B+ templates.
@@ -4142,11 +3242,10 @@ mod tests {
         assert!(keys.contains(&"mkt-icp-definition"));
         assert!(keys.contains(&"mkt-competitive-intel"));
         assert!(keys.contains(&"mkt-positioning-narrative"));
-        // Verify Wave 2B templates (spot check across categories)
-        assert!(keys.contains(&"strategy-ICP-JTBD"));
+        // Verify enriched templates (spot check across categories)
         assert!(keys.contains(&"dev-adr-writer"));
         assert!(keys.contains(&"org-project-charter"));
-        assert!(keys.contains(&"event-concept-brief"));
+        assert!(keys.contains(&"content-case-study-builder"));
     }
 
     // ========================================================================

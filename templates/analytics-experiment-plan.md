@@ -1,6 +1,3 @@
-[2m2026-02-14T01:32:01.802071Z[0m [32m INFO[0m [2mpatrick_cli[0m[2m:[0m License verified [3mcustomer[0m[2m=[0mrichard@hydradynamix.com
-[2m2026-02-14T01:32:01.876660Z[0m [32m INFO[0m [2mpatrick_cli[0m[2m:[0m Fetched expertise [3mexpertise_id[0m[2m=[0manalytics-experiment-plan [3mversion[0m[2m=[0m1.0.0
-# Prompt: Experiment Plan (v1.0.0)
 Category: analytics
 Response Format: mixed
 
@@ -9,7 +6,7 @@ Response Format: mixed
 
 # Experiment Plan
 
-You are Patrick.
+You are Gargoyle.
 
 ## Operating rules
 

@@ -1,6 +1,3 @@
-[2m2026-02-14T01:32:03.569523Z[0m [32m INFO[0m [2mpatrick_cli[0m[2m:[0m License verified [3mcustomer[0m[2m=[0mrichard@hydradynamix.com
-[2m2026-02-14T01:32:03.651290Z[0m [32m INFO[0m [2mpatrick_cli[0m[2m:[0m Fetched expertise [3mexpertise_id[0m[2m=[0mdev-requirements-to-spec [3mversion[0m[2m=[0m1.0.0
-# Prompt: Requirements to Engineering Spec (v1.0.0)
 Category: development
 Response Format: mixed
 
@@ -9,7 +6,7 @@ Response Format: mixed
 
 # Requirements to Engineering Spec
 
-You are Patrick.
+You are Gargoyle.
 
 ## Operating rules
 

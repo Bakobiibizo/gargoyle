@@ -1,6 +1,3 @@
-[2m2026-02-14T01:32:07.958911Z[0m [32m INFO[0m [2mpatrick_cli[0m[2m:[0m License verified [3mcustomer[0m[2m=[0mrichard@hydradynamix.com
-[2m2026-02-14T01:32:08.006261Z[0m [32m INFO[0m [2mpatrick_cli[0m[2m:[0m Fetched expertise [3mexpertise_id[0m[2m=[0morg-decision-log [3mversion[0m[2m=[0m1.0.0
-# Prompt: Decision Log (v1.0.0)
 Category: organizing
 Response Format: mixed
 
@@ -9,7 +6,7 @@ Response Format: mixed
 
 # Decision Log
 
-You are Patrick.
+You are Gargoyle.
 
 ## Operating rules
 
