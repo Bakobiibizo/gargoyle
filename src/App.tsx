@@ -3,12 +3,14 @@ import EntityManager from './components/EntityManager';
 import TemplateRunner from './components/TemplateRunner';
 import GraphExplorer from './components/GraphExplorer';
 import SearchBar from './components/SearchBar';
+import DedupDashboard from './components/DedupDashboard';
+import WorkflowMap from './components/WorkflowMap';
 
 // ---------------------------------------------------------------------------
 // Tab definitions
 // ---------------------------------------------------------------------------
 
-type TabId = 'entities' | 'templates' | 'graph' | 'search';
+type TabId = 'entities' | 'templates' | 'graph' | 'search' | 'dedup' | 'workflows';
 
 interface TabDef {
   id: TabId;
@@ -21,6 +23,8 @@ const TABS: TabDef[] = [
   { id: 'templates', label: 'Templates', icon: '\u25B7' }, // white right-pointing triangle
   { id: 'graph', label: 'Graph', icon: '\u2B2F' },         // three dots connected
   { id: 'search', label: 'Search', icon: '\u2315' },       // telephone recorder / search-like
+  { id: 'dedup', label: 'Dedup', icon: '\u2A61' },         // small contains with overline
+  { id: 'workflows', label: 'Workflows', icon: '\u2B95' },  // rightwards black arrow
 ];
 
 // ---------------------------------------------------------------------------
@@ -223,6 +227,14 @@ function App() {
 
           {activeTab === 'search' && (
             <SearchFullPage onSelectResult={handleNavigateToEntity} />
+          )}
+
+          {activeTab === 'dedup' && (
+            <DedupDashboard />
+          )}
+
+          {activeTab === 'workflows' && (
+            <WorkflowMap />
           )}
         </div>
       </div>

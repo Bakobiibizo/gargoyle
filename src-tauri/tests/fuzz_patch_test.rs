@@ -58,9 +58,9 @@ fn verify_entity_consistent(conn: &rusqlite::Connection, entity_id: &str) {
 
     let (entity_type, schema_version, source) = row;
 
-    // Valid entity types
+    // Valid entity types (all 22)
     assert!(
-        ["metric", "experiment", "result"].contains(&entity_type.as_str()),
+        common::generators::ALL_ENTITY_TYPES.contains(&entity_type.as_str()),
         "Entity type '{}' is not one of the known types",
         entity_type
     );

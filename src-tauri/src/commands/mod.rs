@@ -5,6 +5,7 @@ pub mod context_commands;
 pub mod template_commands;
 pub mod graph_commands;
 pub mod dedup_commands;
+pub mod claim_commands;
 
 pub use entity_commands::{
     create_entity, update_entity, get_entity, list_entities, delete_entity, apply_patch_set,
@@ -13,6 +14,7 @@ pub use entity_commands::{
 pub use relation_commands::{create_relation, get_relations};
 pub use search_commands::{search_fts, search_similar, generate_embedding, reindex_entity};
 pub use context_commands::{get_context, set_context, delete_context, list_contexts};
-pub use template_commands::{run_template, check_prerequisites, list_templates};
+pub use template_commands::{run_template, check_prerequisites, list_templates, list_runs};
 pub use graph_commands::{get_entity_graph, audit_related_to, rebuild_projection, approve_custom_relation_type, reclassify_relations};
 pub use dedup_commands::{check_duplicates, list_dedup_suggestions, resolve_dedup_suggestion};
+pub use claim_commands::{list_claims, get_claim, promote_claim};

@@ -38,6 +38,7 @@ fn main() {
             gargoyle_lib::commands::template_commands::run_template,
             gargoyle_lib::commands::template_commands::check_prerequisites,
             gargoyle_lib::commands::template_commands::list_templates,
+            gargoyle_lib::commands::template_commands::list_runs,
             gargoyle_lib::commands::graph_commands::get_entity_graph,
             gargoyle_lib::commands::graph_commands::audit_related_to,
             gargoyle_lib::commands::graph_commands::rebuild_projection,
@@ -46,6 +47,9 @@ fn main() {
             gargoyle_lib::commands::dedup_commands::check_duplicates,
             gargoyle_lib::commands::dedup_commands::list_dedup_suggestions,
             gargoyle_lib::commands::dedup_commands::resolve_dedup_suggestion,
+            gargoyle_lib::commands::claim_commands::list_claims,
+            gargoyle_lib::commands::claim_commands::get_claim,
+            gargoyle_lib::commands::claim_commands::promote_claim,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

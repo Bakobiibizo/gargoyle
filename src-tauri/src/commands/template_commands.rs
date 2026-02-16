@@ -3,6 +3,8 @@
 use tauri::State;
 
 use crate::error::{GargoyleError, Result};
+use crate::models::run::Run;
+use crate::services::store::StoreService;
 use crate::services::template_runner::{
     self, PrerequisiteResult, TemplateDefinition, TemplateInput, TemplateOutput,
 };
@@ -37,4 +39,16 @@ pub fn list_templates(
     _state: State<'_, AppState>,
 ) -> Result<Vec<TemplateDefinition>> {
     Ok(template_runner::list_template_definitions())
+}
+
+#[tauri::command]
+pub fn list_runs(
+    state: State<'_, AppState>,
+    template_key: Option<String>,
+) -> Result<Vec<Run>> {
+    let guard = state.db.lock().unwrap();
+    let conn = guard.as_ref().ok_or_else(|| {
+        GargoyleError::Schema("Database not initialized".to_string())
+    })?;
+    StoreService::list_runs(conn, template_key.as_deref())
 }

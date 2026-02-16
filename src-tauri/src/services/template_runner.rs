@@ -750,6 +750,26 @@ fn generate_ops(
         "mkt-icp-definition" => generate_icp_definition_ops(params, run_id),
         "mkt-competitive-intel" => generate_competitive_intel_ops(params, run_id),
         "mkt-positioning-narrative" => generate_positioning_narrative_ops(conn, params, run_id),
+        // Dev templates (enriched)
+        "dev-adr-writer" => generate_adr_writer_ops(params, run_id),
+        "dev-api-design" => generate_api_design_ops(params, run_id),
+        "dev-architecture-review" => generate_architecture_review_ops(params, run_id),
+        "dev-test-plan" => generate_test_plan_ops(params, run_id),
+        "dev-prd-to-techspec" => generate_prd_to_techspec_ops(params, run_id),
+        "dev-requirements-to-spec" => generate_requirements_to_spec_ops(params, run_id),
+        "dev-db-schema" => generate_db_schema_ops(params, run_id),
+        "dev-migration-plan" => generate_migration_plan_ops(params, run_id),
+        "dev-security-threat-model" => generate_security_threat_model_ops(params, run_id),
+        // Org templates (enriched)
+        "org-project-charter" => generate_project_charter_ops(params, run_id),
+        "org-project-plan" => generate_project_plan_ops(params, run_id),
+        "org-decision-log" => generate_decision_log_ops(params, run_id),
+        "org-meeting-brief" => generate_meeting_brief_ops(params, run_id),
+        "org-retrospective" => generate_retrospective_ops(params, run_id),
+        // Content templates (enriched)
+        "content-case-study-builder" => generate_case_study_builder_ops(params, run_id),
+        "content-creative-brief-builder" => generate_creative_brief_builder_ops(params, run_id),
+        "content-strategy-pillars-seo" => generate_strategy_pillars_seo_ops(params, run_id),
         // Wave 2B+ templates use the generic generator
         _ => {
             if let Some(config) = generic_template_config(key) {
@@ -1521,6 +1541,112 @@ fn generate_phase2_ops(
                 relation_type: "supports".to_string(),
                 weight: Some(1.0),
                 confidence: None,
+                provenance_run_id: Some(run_id.to_string()),
+            })])
+        }
+        "org-decision-log" => {
+            // Phase 2: create related_to relations between decision entities
+            if phase1_result.applied.len() < 2 {
+                return Ok(vec![]);
+            }
+            let entity_ids: Vec<String> = phase1_result
+                .applied
+                .iter()
+                .filter_map(|op| op.entity_id.clone())
+                .collect();
+            let mut ops = Vec::new();
+            if let Some(first_id) = entity_ids.first() {
+                for other_id in entity_ids.iter().skip(1) {
+                    ops.push(PatchOp::CreateRelation(CreateRelationPayload {
+                        from_id: first_id.clone(),
+                        to_id: other_id.clone(),
+                        relation_type: "related_to".to_string(),
+                        weight: Some(0.8),
+                        confidence: Some(0.9),
+                        provenance_run_id: Some(run_id.to_string()),
+                    }));
+                }
+            }
+            Ok(ops)
+        }
+        "org-retrospective" => {
+            // Phase 2: link note entities (went_well, improvements, action_items) to session
+            if phase1_result.applied.len() < 2 {
+                return Ok(vec![]);
+            }
+            let entity_ids: Vec<String> = phase1_result
+                .applied
+                .iter()
+                .filter_map(|op| op.entity_id.clone())
+                .collect();
+            let mut ops = Vec::new();
+            // First entity is the session, rest are notes
+            if let Some(session_id) = entity_ids.first() {
+                for note_id in entity_ids.iter().skip(1) {
+                    ops.push(PatchOp::CreateRelation(CreateRelationPayload {
+                        from_id: note_id.clone(),
+                        to_id: session_id.clone(),
+                        relation_type: "evidence_for".to_string(),
+                        weight: Some(1.0),
+                        confidence: Some(1.0),
+                        provenance_run_id: Some(run_id.to_string()),
+                    }));
+                }
+            }
+            Ok(ops)
+        }
+        "content-strategy-pillars-seo" => {
+            // Phase 2: link pillar entities to the strategy spec
+            if phase1_result.applied.len() < 2 {
+                return Ok(vec![]);
+            }
+            let entity_ids: Vec<String> = phase1_result
+                .applied
+                .iter()
+                .filter_map(|op| op.entity_id.clone())
+                .collect();
+            let mut ops = Vec::new();
+            // First entity is the strategy spec, rest are pillar notes
+            if let Some(strategy_id) = entity_ids.first() {
+                for pillar_id in entity_ids.iter().skip(1) {
+                    ops.push(PatchOp::CreateRelation(CreateRelationPayload {
+                        from_id: pillar_id.clone(),
+                        to_id: strategy_id.clone(),
+                        relation_type: "supports".to_string(),
+                        weight: Some(1.0),
+                        confidence: Some(1.0),
+                        provenance_run_id: Some(run_id.to_string()),
+                    }));
+                }
+            }
+            Ok(ops)
+        }
+        "dev-adr-writer" => {
+            // Phase 2: create a claim capturing the decision outcome
+            if phase1_result.applied.is_empty() {
+                return Ok(vec![]);
+            }
+            let decision_id = phase1_result.applied[0]
+                .entity_id
+                .as_ref()
+                .expect("Decision entity should have entity_id");
+
+            let decision_title = params
+                .get("title")
+                .or_else(|| params.get("decision_title"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Untitled Decision");
+            let chosen_option = params
+                .get("chosen_option")
+                .and_then(|v| v.as_str())
+                .unwrap_or("pending");
+
+            Ok(vec![PatchOp::CreateClaim(CreateClaimPayload {
+                subject: decision_title.to_string(),
+                predicate: "decided_on".to_string(),
+                object: chosen_option.to_string(),
+                confidence: 0.9,
+                evidence_entity_id: decision_id.to_string(),
                 provenance_run_id: Some(run_id.to_string()),
             })])
         }
@@ -2317,6 +2443,1566 @@ fn generate_positioning_narrative_ops(
         category: Some("positioning".to_string()),
         priority: Some(1),
     })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// dev-adr-writer template (enriched)
+// =============================================================================
+
+/// Generates a decision entity for an Architecture Decision Record.
+///
+/// Input params (JSON):
+///   - title / decision_title: String (the decision being made)
+///   - context: String (why this decision is needed)
+///   - options_considered: String (comma-separated or newline-separated options)
+///   - chosen_option: String (the selected option)
+///   - rationale: String (why this option was chosen)
+///   - consequences: String (expected consequences)
+///   - status: String (proposed/accepted/deprecated/superseded)
+///
+/// Output: 1 decision entity with rich canonical fields
+fn generate_adr_writer_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let decision_title = params
+        .get("title")
+        .or_else(|| params.get("decision_title"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Untitled Decision");
+    let context = params
+        .get("context")
+        .and_then(|v| v.as_str())
+        .unwrap_or("No context provided");
+    let options_considered = params
+        .get("options_considered")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Option A, Option B");
+    let chosen_option = params
+        .get("chosen_option")
+        .and_then(|v| v.as_str())
+        .unwrap_or("pending");
+    let rationale = params
+        .get("rationale")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be determined");
+    let consequences = params
+        .get("consequences")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be evaluated");
+    let status = params
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("proposed");
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "decision".to_string(),
+        title: format!("ADR: {}", decision_title),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "owner_id": "engineering-team",
+            "rationale": rationale,
+            "options_considered": options_considered,
+            "chosen_option": chosen_option,
+            "consequences": consequences,
+        }),
+        body_md: Some(format!(
+            "# ADR: {}\n\n## Status\n{}\n\n## Context\n{}\n\n\
+            ## Options Considered\n{}\n\n## Decision\n{}\n\n\
+            ## Rationale\n{}\n\n## Consequences\n{}",
+            decision_title, status, context, options_considered,
+            chosen_option, rationale, consequences
+        )),
+        status: Some(status.to_string()),
+        category: Some("adr".to_string()),
+        priority: Some(1),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// dev-api-design template (enriched)
+// =============================================================================
+
+/// Generates a spec entity for an API design document.
+///
+/// Input params (JSON):
+///   - title / api_name: String
+///   - description: String
+///   - endpoints: String (comma-separated endpoint paths)
+///   - auth_method: String (e.g., "OAuth2", "API Key", "JWT")
+///   - versioning: String (e.g., "URL path", "header", "query param")
+///   - protocol: String (e.g., "REST", "GraphQL", "gRPC")
+///   - rate_limiting: String
+///
+/// Output: 1 spec entity with rich canonical fields
+fn generate_api_design_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let api_name = params
+        .get("title")
+        .or_else(|| params.get("api_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Untitled API");
+    let description = params
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("API design specification");
+    let endpoints = params
+        .get("endpoints")
+        .and_then(|v| v.as_str())
+        .unwrap_or("/api/v1/resource");
+    let auth_method = params
+        .get("auth_method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Bearer Token");
+    let versioning = params
+        .get("versioning")
+        .and_then(|v| v.as_str())
+        .unwrap_or("URL path");
+    let protocol = params
+        .get("protocol")
+        .and_then(|v| v.as_str())
+        .unwrap_or("REST");
+    let rate_limiting = params
+        .get("rate_limiting")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Standard");
+
+    let endpoint_list: Vec<&str> = endpoints
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let endpoints_md = endpoint_list
+        .iter()
+        .map(|e| format!("- `{}`", e))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "spec".to_string(),
+        title: format!("API Design: {}", api_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "author": "engineering-team",
+            "protocol": protocol,
+            "auth_method": auth_method,
+            "versioning_strategy": versioning,
+            "endpoints": endpoint_list,
+            "rate_limiting": rate_limiting,
+        }),
+        body_md: Some(format!(
+            "# API Design: {}\n\n## Overview\n{}\n\n## Protocol\n{}\n\n\
+            ## Authentication\n{}\n\n## Versioning Strategy\n{}\n\n\
+            ## Rate Limiting\n{}\n\n## Endpoints\n{}\n\n\
+            ## Error Handling\n_TBD_\n\n## Request/Response Formats\n_TBD_",
+            api_name, description, protocol, auth_method, versioning,
+            rate_limiting, endpoints_md
+        )),
+        status: Some("draft".to_string()),
+        category: Some("dev".to_string()),
+        priority: Some(1),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// dev-architecture-review template (enriched)
+// =============================================================================
+
+/// Generates a note entity for an architecture review.
+///
+/// Input params (JSON):
+///   - title / system_name: String
+///   - architecture_type: String (e.g., "microservices", "monolith", "serverless")
+///   - components: String (comma-separated)
+///   - concerns: String (key concerns to address)
+///   - review_scope: String
+///
+/// Output: 1 note entity with structured canonical fields
+fn generate_architecture_review_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let system_name = params
+        .get("title")
+        .or_else(|| params.get("system_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("System");
+    let architecture_type = params
+        .get("architecture_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let components = params
+        .get("components")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Frontend, Backend, Database");
+    let concerns = params
+        .get("concerns")
+        .and_then(|v| v.as_str())
+        .unwrap_or("scalability, reliability, maintainability");
+    let review_scope = params
+        .get("review_scope")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Full system review");
+
+    let component_list: Vec<&str> = components
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let components_md = component_list
+        .iter()
+        .map(|c| format!("### {}\n- **Status**: _TBD_\n- **Risks**: _TBD_\n- **Recommendations**: _TBD_", c))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "note".to_string(),
+        title: format!("Architecture Review: {}", system_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "context": format!("architecture-review/{}", architecture_type),
+            "tags": format!("architecture,review,{},{}", architecture_type, system_name),
+            "architecture_type": architecture_type,
+            "components": component_list,
+            "review_scope": review_scope,
+        }),
+        body_md: Some(format!(
+            "# Architecture Review: {}\n\n## Scope\n{}\n\n## Architecture Type\n{}\n\n\
+            ## Key Concerns\n{}\n\n## Component Analysis\n\n{}\n\n\
+            ## Cross-Cutting Concerns\n_TBD_\n\n## Recommendations\n_TBD_\n\n## Risk Assessment\n_TBD_",
+            system_name, review_scope, architecture_type, concerns, components_md
+        )),
+        status: Some("draft".to_string()),
+        category: Some("dev".to_string()),
+        priority: Some(1),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// dev-test-plan template (enriched)
+// =============================================================================
+
+/// Generates a spec entity for a test plan.
+///
+/// Input params (JSON):
+///   - title / project_name: String
+///   - test_strategy: String (e.g., "unit + integration + e2e")
+///   - coverage_targets: String (e.g., "80% line coverage")
+///   - test_environments: String (comma-separated)
+///   - risk_areas: String (areas requiring focused testing)
+///   - automation_approach: String
+///
+/// Output: 1 spec entity with rich canonical fields
+fn generate_test_plan_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let project_name = params
+        .get("title")
+        .or_else(|| params.get("project_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Project");
+    let test_strategy = params
+        .get("test_strategy")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unit + integration + e2e");
+    let coverage_targets = params
+        .get("coverage_targets")
+        .and_then(|v| v.as_str())
+        .unwrap_or("80% line coverage");
+    let test_environments = params
+        .get("test_environments")
+        .and_then(|v| v.as_str())
+        .unwrap_or("local, staging, production");
+    let risk_areas = params
+        .get("risk_areas")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be identified");
+    let automation_approach = params
+        .get("automation_approach")
+        .and_then(|v| v.as_str())
+        .unwrap_or("CI/CD pipeline with automated test execution");
+
+    let env_list: Vec<&str> = test_environments
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "spec".to_string(),
+        title: format!("Test Plan: {}", project_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "author": "qa-team",
+            "test_strategy": test_strategy,
+            "coverage_targets": coverage_targets,
+            "test_environments": env_list,
+            "risk_areas": risk_areas,
+            "automation_approach": automation_approach,
+        }),
+        body_md: Some(format!(
+            "# Test Plan: {}\n\n## Test Strategy\n{}\n\n## Coverage Targets\n{}\n\n\
+            ## Test Environments\n{}\n\n## Risk Areas\n{}\n\n\
+            ## Automation Approach\n{}\n\n## Test Categories\n\n\
+            ### Unit Tests\n_TBD_\n\n### Integration Tests\n_TBD_\n\n\
+            ### End-to-End Tests\n_TBD_\n\n### Performance Tests\n_TBD_\n\n\
+            ## Exit Criteria\n_TBD_",
+            project_name, test_strategy, coverage_targets,
+            test_environments, risk_areas, automation_approach
+        )),
+        status: Some("draft".to_string()),
+        category: Some("dev".to_string()),
+        priority: Some(1),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// dev-prd-to-techspec template (enriched)
+// =============================================================================
+
+/// Generates a spec entity translating a PRD into a technical specification.
+///
+/// Input params (JSON):
+///   - title / feature_name: String
+///   - prd_summary: String (summary of the product requirements)
+///   - technical_approach: String
+///   - dependencies: String (comma-separated)
+///   - estimated_effort: String (e.g., "2 sprints")
+///   - acceptance_criteria: String
+///
+/// Output: 1 spec entity with rich canonical fields
+fn generate_prd_to_techspec_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let feature_name = params
+        .get("title")
+        .or_else(|| params.get("feature_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Feature");
+    let prd_summary = params
+        .get("prd_summary")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Product requirements to be specified");
+    let technical_approach = params
+        .get("technical_approach")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be determined");
+    let dependencies = params
+        .get("dependencies")
+        .and_then(|v| v.as_str())
+        .unwrap_or("None identified");
+    let estimated_effort = params
+        .get("estimated_effort")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+    let acceptance_criteria = params
+        .get("acceptance_criteria")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be defined");
+
+    let dep_list: Vec<&str> = dependencies
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "spec".to_string(),
+        title: format!("Tech Spec: {}", feature_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "author": "engineering-team",
+            "prd_summary": prd_summary,
+            "technical_approach": technical_approach,
+            "dependencies": dep_list,
+            "estimated_effort": estimated_effort,
+            "acceptance_criteria": acceptance_criteria,
+        }),
+        body_md: Some(format!(
+            "# Tech Spec: {}\n\n## PRD Summary\n{}\n\n## Technical Approach\n{}\n\n\
+            ## Dependencies\n{}\n\n## Estimated Effort\n{}\n\n\
+            ## Acceptance Criteria\n{}\n\n## System Design\n_TBD_\n\n\
+            ## Data Model Changes\n_TBD_\n\n## API Changes\n_TBD_\n\n\
+            ## Migration Plan\n_TBD_\n\n## Rollout Strategy\n_TBD_",
+            feature_name, prd_summary, technical_approach,
+            dependencies, estimated_effort, acceptance_criteria
+        )),
+        status: Some("draft".to_string()),
+        category: Some("dev".to_string()),
+        priority: Some(1),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// dev-requirements-to-spec template (enriched)
+// =============================================================================
+
+/// Generates a spec entity from requirements input.
+///
+/// Input params (JSON):
+///   - title / project_name: String
+///   - requirements: String (raw requirements list)
+///   - stakeholders: String (comma-separated)
+///   - constraints: String
+///   - scope: String
+///   - priority_level: String (e.g., "critical", "high", "medium")
+///
+/// Output: 1 spec entity with structured canonical fields
+fn generate_requirements_to_spec_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let project_name = params
+        .get("title")
+        .or_else(|| params.get("project_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Project");
+    let requirements = params
+        .get("requirements")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Requirements to be gathered");
+    let stakeholders = params
+        .get("stakeholders")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Product, Engineering");
+    let constraints = params
+        .get("constraints")
+        .and_then(|v| v.as_str())
+        .unwrap_or("None identified");
+    let scope = params
+        .get("scope")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be defined");
+    let priority_level = params
+        .get("priority_level")
+        .and_then(|v| v.as_str())
+        .unwrap_or("medium");
+
+    let stakeholder_list: Vec<&str> = stakeholders
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let priority_num = match priority_level {
+        "critical" => 0,
+        "high" => 1,
+        "medium" => 2,
+        "low" => 3,
+        _ => 2,
+    };
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "spec".to_string(),
+        title: format!("Requirements Spec: {}", project_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "author": "product-team",
+            "requirements_summary": requirements,
+            "stakeholders": stakeholder_list,
+            "constraints": constraints,
+            "scope": scope,
+            "priority_level": priority_level,
+        }),
+        body_md: Some(format!(
+            "# Requirements Specification: {}\n\n## Scope\n{}\n\n\
+            ## Stakeholders\n{}\n\n## Requirements\n{}\n\n\
+            ## Constraints\n{}\n\n## Priority\n{}\n\n\
+            ## Functional Requirements\n_TBD_\n\n\
+            ## Non-Functional Requirements\n_TBD_\n\n\
+            ## Out of Scope\n_TBD_\n\n## Assumptions\n_TBD_",
+            project_name, scope, stakeholders, requirements,
+            constraints, priority_level
+        )),
+        status: Some("draft".to_string()),
+        category: Some("dev".to_string()),
+        priority: Some(priority_num),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// dev-db-schema template (enriched)
+// =============================================================================
+
+/// Generates a spec entity for database schema design.
+///
+/// Input params (JSON):
+///   - title / schema_name: String
+///   - database_type: String (e.g., "PostgreSQL", "SQLite", "MongoDB")
+///   - tables: String (comma-separated table names)
+///   - relationships: String (description of key relationships)
+///   - indexing_strategy: String
+///   - migration_approach: String
+///
+/// Output: 1 spec entity with rich canonical fields
+fn generate_db_schema_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let schema_name = params
+        .get("title")
+        .or_else(|| params.get("schema_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Database Schema");
+    let database_type = params
+        .get("database_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("PostgreSQL");
+    let tables = params
+        .get("tables")
+        .and_then(|v| v.as_str())
+        .unwrap_or("users, orders, products");
+    let relationships = params
+        .get("relationships")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be defined");
+    let indexing_strategy = params
+        .get("indexing_strategy")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Primary keys + foreign keys + common query patterns");
+    let migration_approach = params
+        .get("migration_approach")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Incremental migrations");
+
+    let table_list: Vec<&str> = tables
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let tables_md = table_list
+        .iter()
+        .map(|t| format!("### `{}`\n- **Columns**: _TBD_\n- **Indexes**: _TBD_\n- **Constraints**: _TBD_", t))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "spec".to_string(),
+        title: format!("DB Schema: {}", schema_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "author": "engineering-team",
+            "database_type": database_type,
+            "tables": table_list,
+            "relationships": relationships,
+            "indexing_strategy": indexing_strategy,
+            "migration_approach": migration_approach,
+        }),
+        body_md: Some(format!(
+            "# DB Schema: {}\n\n## Database\n{}\n\n## Tables\n\n{}\n\n\
+            ## Relationships\n{}\n\n## Indexing Strategy\n{}\n\n\
+            ## Migration Approach\n{}\n\n## Performance Considerations\n_TBD_",
+            schema_name, database_type, tables_md, relationships,
+            indexing_strategy, migration_approach
+        )),
+        status: Some("draft".to_string()),
+        category: Some("dev".to_string()),
+        priority: Some(1),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// dev-migration-plan template (enriched)
+// =============================================================================
+
+/// Generates a spec entity for a system migration plan.
+///
+/// Input params (JSON):
+///   - title / migration_name: String
+///   - source_system: String
+///   - target_system: String
+///   - data_scope: String
+///   - rollback_strategy: String
+///   - estimated_downtime: String
+///   - risk_level: String
+///
+/// Output: 1 spec entity with rich canonical fields
+fn generate_migration_plan_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let migration_name = params
+        .get("title")
+        .or_else(|| params.get("migration_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("System Migration");
+    let source_system = params
+        .get("source_system")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Legacy system");
+    let target_system = params
+        .get("target_system")
+        .and_then(|v| v.as_str())
+        .unwrap_or("New system");
+    let data_scope = params
+        .get("data_scope")
+        .and_then(|v| v.as_str())
+        .unwrap_or("All data");
+    let rollback_strategy = params
+        .get("rollback_strategy")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Blue-green deployment with instant rollback");
+    let estimated_downtime = params
+        .get("estimated_downtime")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+    let risk_level = params
+        .get("risk_level")
+        .and_then(|v| v.as_str())
+        .unwrap_or("medium");
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "spec".to_string(),
+        title: format!("Migration Plan: {}", migration_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "author": "engineering-team",
+            "source_system": source_system,
+            "target_system": target_system,
+            "data_scope": data_scope,
+            "rollback_strategy": rollback_strategy,
+            "estimated_downtime": estimated_downtime,
+            "risk_level": risk_level,
+        }),
+        body_md: Some(format!(
+            "# Migration Plan: {}\n\n## Source System\n{}\n\n## Target System\n{}\n\n\
+            ## Data Scope\n{}\n\n## Rollback Strategy\n{}\n\n\
+            ## Estimated Downtime\n{}\n\n## Risk Level\n{}\n\n\
+            ## Pre-Migration Checklist\n_TBD_\n\n## Migration Steps\n_TBD_\n\n\
+            ## Validation Steps\n_TBD_\n\n## Post-Migration Tasks\n_TBD_",
+            migration_name, source_system, target_system, data_scope,
+            rollback_strategy, estimated_downtime, risk_level
+        )),
+        status: Some("draft".to_string()),
+        category: Some("dev".to_string()),
+        priority: Some(1),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// dev-security-threat-model template (enriched)
+// =============================================================================
+
+/// Generates a spec entity for a security threat model.
+///
+/// Input params (JSON):
+///   - title / system_name: String
+///   - threat_model_type: String (e.g., "STRIDE", "DREAD", "PASTA")
+///   - assets: String (comma-separated critical assets)
+///   - trust_boundaries: String
+///   - attack_surface: String
+///   - data_classification: String (e.g., "PII, financial, public")
+///
+/// Output: 1 spec entity with structured canonical fields
+fn generate_security_threat_model_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let system_name = params
+        .get("title")
+        .or_else(|| params.get("system_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("System");
+    let threat_model_type = params
+        .get("threat_model_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("STRIDE");
+    let assets = params
+        .get("assets")
+        .and_then(|v| v.as_str())
+        .unwrap_or("User data, API keys, credentials");
+    let trust_boundaries = params
+        .get("trust_boundaries")
+        .and_then(|v| v.as_str())
+        .unwrap_or("External/Internal network boundary");
+    let attack_surface = params
+        .get("attack_surface")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Web application, API endpoints");
+    let data_classification = params
+        .get("data_classification")
+        .and_then(|v| v.as_str())
+        .unwrap_or("confidential");
+
+    let asset_list: Vec<&str> = assets
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "spec".to_string(),
+        title: format!("Threat Model: {}", system_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "author": "security-team",
+            "threat_model_type": threat_model_type,
+            "assets": asset_list,
+            "trust_boundaries": trust_boundaries,
+            "attack_surface": attack_surface,
+            "data_classification": data_classification,
+        }),
+        body_md: Some(format!(
+            "# Threat Model: {}\n\n## Methodology\n{}\n\n## Assets\n{}\n\n\
+            ## Trust Boundaries\n{}\n\n## Attack Surface\n{}\n\n\
+            ## Data Classification\n{}\n\n\
+            ## Threats Identified\n_TBD_\n\n## Mitigations\n_TBD_\n\n\
+            ## Residual Risk\n_TBD_\n\n## Recommendations\n_TBD_",
+            system_name, threat_model_type, assets, trust_boundaries,
+            attack_surface, data_classification
+        )),
+        status: Some("draft".to_string()),
+        category: Some("dev".to_string()),
+        priority: Some(0),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// org-project-charter template (enriched)
+// =============================================================================
+
+/// Generates a project entity for a project charter.
+///
+/// Input params (JSON):
+///   - title / project_name: String
+///   - objective: String
+///   - success_criteria: String
+///   - timeline: String (e.g., "Q1 2026")
+///   - budget: String
+///   - sponsor: String
+///   - team: String (comma-separated team members)
+///   - risks: String
+///
+/// Output: 1 project entity with rich canonical fields
+fn generate_project_charter_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let project_name = params
+        .get("title")
+        .or_else(|| params.get("project_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Untitled Project");
+    let objective = params
+        .get("objective")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Project objective to be defined");
+    let success_criteria = params
+        .get("success_criteria")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be defined");
+    let timeline = params
+        .get("timeline")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+    let budget = params
+        .get("budget")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+    let sponsor = params
+        .get("sponsor")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+    let team = params
+        .get("team")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be assigned");
+    let risks = params
+        .get("risks")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be identified");
+
+    let team_list: Vec<&str> = team
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "project".to_string(),
+        title: format!("Project Charter: {}", project_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "objective": objective,
+            "success_criteria": success_criteria,
+            "timeline": timeline,
+            "budget": budget,
+            "sponsor": sponsor,
+            "team_members": team_list,
+            "risks": risks,
+        }),
+        body_md: Some(format!(
+            "# Project Charter: {}\n\n## Objective\n{}\n\n## Success Criteria\n{}\n\n\
+            ## Timeline\n{}\n\n## Budget\n{}\n\n## Sponsor\n{}\n\n\
+            ## Team\n{}\n\n## Risks\n{}\n\n\
+            ## Deliverables\n_TBD_\n\n## Milestones\n_TBD_\n\n## Constraints\n_TBD_",
+            project_name, objective, success_criteria, timeline,
+            budget, sponsor, team, risks
+        )),
+        status: Some("planning".to_string()),
+        category: Some("org".to_string()),
+        priority: Some(1),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// org-project-plan template (enriched)
+// =============================================================================
+
+/// Generates a spec entity for a project plan.
+///
+/// Input params (JSON):
+///   - title / project_name: String
+///   - phases: String (comma-separated project phases)
+///   - milestones: String (comma-separated key milestones)
+///   - resources: String
+///   - dependencies: String
+///   - start_date: String
+///   - end_date: String
+///
+/// Output: 1 spec entity with rich canonical fields
+fn generate_project_plan_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let project_name = params
+        .get("title")
+        .or_else(|| params.get("project_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Project");
+    let phases = params
+        .get("phases")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Planning, Execution, Review, Closeout");
+    let milestones = params
+        .get("milestones")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Kickoff, Mid-point Review, Final Delivery");
+    let resources = params
+        .get("resources")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be assigned");
+    let dependencies = params
+        .get("dependencies")
+        .and_then(|v| v.as_str())
+        .unwrap_or("None identified");
+    let start_date = params
+        .get("start_date")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+    let end_date = params
+        .get("end_date")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+
+    let phase_list: Vec<&str> = phases
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let milestone_list: Vec<&str> = milestones
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let phases_md = phase_list
+        .iter()
+        .enumerate()
+        .map(|(i, p)| format!("### Phase {}: {}\n- **Duration**: _TBD_\n- **Deliverables**: _TBD_\n- **Owner**: _TBD_", i + 1, p))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "spec".to_string(),
+        title: format!("Project Plan: {}", project_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "author": "project-manager",
+            "phases": phase_list,
+            "milestones": milestone_list,
+            "resources": resources,
+            "dependencies": dependencies,
+            "start_date": start_date,
+            "end_date": end_date,
+        }),
+        body_md: Some(format!(
+            "# Project Plan: {}\n\n## Timeline\n{} to {}\n\n\
+            ## Phases\n\n{}\n\n## Milestones\n{}\n\n\
+            ## Resources\n{}\n\n## Dependencies\n{}\n\n\
+            ## Risk Mitigation\n_TBD_\n\n## Communication Plan\n_TBD_",
+            project_name, start_date, end_date, phases_md,
+            milestones, resources, dependencies
+        )),
+        status: Some("draft".to_string()),
+        category: Some("org".to_string()),
+        priority: Some(1),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// org-decision-log template (enriched)
+// =============================================================================
+
+/// Generates decision entities for a decision log.
+///
+/// Input params (JSON):
+///   - title / project_name: String
+///   - decisions: String (semicolon-separated decision descriptions)
+///   - decision_maker: String
+///   - context: String
+///
+/// Output: 1+ decision entities (one per decision listed)
+fn generate_decision_log_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let project_name = params
+        .get("title")
+        .or_else(|| params.get("project_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Project");
+    let decisions_str = params
+        .get("decisions")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Decision 1; Decision 2");
+    let decision_maker = params
+        .get("decision_maker")
+        .and_then(|v| v.as_str())
+        .unwrap_or("team-lead");
+    let context = params
+        .get("context")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Project decision context");
+
+    let decisions: Vec<&str> = decisions_str
+        .split(';')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let mut ops = Vec::new();
+    for (i, decision) in decisions.iter().enumerate() {
+        ops.push(PatchOp::CreateEntity(CreateEntityPayload {
+            entity_type: "decision".to_string(),
+            title: format!("Decision Log [{}] #{}: {}", project_name, i + 1, decision),
+            source: "template".to_string(),
+            canonical_fields: serde_json::json!({
+                "owner_id": decision_maker,
+                "rationale": format!("Decision #{} for {}: {}", i + 1, project_name, context),
+                "decision_number": i + 1,
+                "project": project_name,
+            }),
+            body_md: Some(format!(
+                "# Decision #{}: {}\n\n**Project**: {}\n**Decision Maker**: {}\n\n\
+                ## Context\n{}\n\n## Decision\n{}\n\n\
+                ## Rationale\n_TBD_\n\n## Alternatives Considered\n_TBD_\n\n\
+                ## Impact\n_TBD_",
+                i + 1, decision, project_name, decision_maker, context, decision
+            )),
+            status: Some("proposed".to_string()),
+            category: Some("org".to_string()),
+            priority: Some(1),
+        }));
+    }
+
+    Ok(ops)
+}
+
+// =============================================================================
+// org-meeting-brief template (enriched)
+// =============================================================================
+
+/// Generates a session entity for a meeting brief.
+///
+/// Input params (JSON):
+///   - title / meeting_name: String
+///   - agenda: String (semicolon-separated agenda items)
+///   - participants: String (comma-separated)
+///   - meeting_date: String
+///   - duration: String (e.g., "60 min")
+///   - objective: String
+///   - pre_reads: String
+///
+/// Output: 1 session entity with rich canonical fields
+fn generate_meeting_brief_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let meeting_name = params
+        .get("title")
+        .or_else(|| params.get("meeting_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Meeting");
+    let agenda = params
+        .get("agenda")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Opening; Discussion; Action Items; Close");
+    let participants = params
+        .get("participants")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Team members");
+    let meeting_date = params
+        .get("meeting_date")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+    let duration = params
+        .get("duration")
+        .and_then(|v| v.as_str())
+        .unwrap_or("60 min");
+    let objective = params
+        .get("objective")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be defined");
+    let pre_reads = params
+        .get("pre_reads")
+        .and_then(|v| v.as_str())
+        .unwrap_or("None");
+
+    let agenda_items: Vec<&str> = agenda
+        .split(';')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let participant_list: Vec<&str> = participants
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let agenda_md = agenda_items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| format!("{}. {}", i + 1, item))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "session".to_string(),
+        title: format!("Meeting Brief: {}", meeting_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "agenda": agenda_items,
+            "participants": participant_list,
+            "meeting_date": meeting_date,
+            "duration": duration,
+            "objective": objective,
+            "pre_reads": pre_reads,
+        }),
+        body_md: Some(format!(
+            "# Meeting Brief: {}\n\n**Date**: {}\n**Duration**: {}\n\
+            **Participants**: {}\n\n## Objective\n{}\n\n## Agenda\n{}\n\n\
+            ## Pre-Reads\n{}\n\n## Notes\n_To be filled during meeting_\n\n\
+            ## Action Items\n_To be captured during meeting_",
+            meeting_name, meeting_date, duration, participants,
+            objective, agenda_md, pre_reads
+        )),
+        status: Some("draft".to_string()),
+        category: Some("org".to_string()),
+        priority: None,
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// org-retrospective template (enriched)
+// =============================================================================
+
+/// Generates a session entity + note entities for a retrospective.
+///
+/// Input params (JSON):
+///   - title / sprint_name: String
+///   - what_went_well: String (semicolon-separated items)
+///   - what_didnt_go_well: String (semicolon-separated items)
+///   - action_items: String (semicolon-separated items)
+///   - participants: String (comma-separated)
+///   - sprint_dates: String
+///
+/// Output: 1 session entity + 3 note entities (went_well, improvements, actions)
+fn generate_retrospective_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let sprint_name = params
+        .get("title")
+        .or_else(|| params.get("sprint_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Sprint");
+    let what_went_well = params
+        .get("what_went_well")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be discussed");
+    let what_didnt_go_well = params
+        .get("what_didnt_go_well")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be discussed");
+    let action_items = params
+        .get("action_items")
+        .and_then(|v| v.as_str())
+        .unwrap_or("To be identified");
+    let participants = params
+        .get("participants")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Team members");
+    let sprint_dates = params
+        .get("sprint_dates")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+
+    let participant_list: Vec<&str> = participants
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let well_items: Vec<&str> = what_went_well
+        .split(';')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let improve_items: Vec<&str> = what_didnt_go_well
+        .split(';')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let action_list: Vec<&str> = action_items
+        .split(';')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let mut ops = Vec::new();
+
+    // Session entity (main retro container)
+    ops.push(PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "session".to_string(),
+        title: format!("Retrospective: {}", sprint_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "participants": participant_list,
+            "sprint_dates": sprint_dates,
+            "session_type": "retrospective",
+        }),
+        body_md: Some(format!(
+            "# Retrospective: {}\n\n**Sprint Dates**: {}\n**Participants**: {}",
+            sprint_name, sprint_dates, participants
+        )),
+        status: Some("draft".to_string()),
+        category: Some("org".to_string()),
+        priority: None,
+    }));
+
+    // Note: What went well
+    let well_md = well_items
+        .iter()
+        .map(|item| format!("- {}", item))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    ops.push(PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "note".to_string(),
+        title: format!("Retro - What Went Well: {}", sprint_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "context": "retrospective/went-well",
+            "tags": "retrospective,went-well",
+            "items": well_items,
+        }),
+        body_md: Some(format!(
+            "# What Went Well\n\n{}", well_md
+        )),
+        status: Some("draft".to_string()),
+        category: Some("org".to_string()),
+        priority: None,
+    }));
+
+    // Note: What didn't go well / improvements
+    let improve_md = improve_items
+        .iter()
+        .map(|item| format!("- {}", item))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    ops.push(PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "note".to_string(),
+        title: format!("Retro - Improvements: {}", sprint_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "context": "retrospective/improvements",
+            "tags": "retrospective,improvements",
+            "items": improve_items,
+        }),
+        body_md: Some(format!(
+            "# What Didn't Go Well / Improvements\n\n{}", improve_md
+        )),
+        status: Some("draft".to_string()),
+        category: Some("org".to_string()),
+        priority: None,
+    }));
+
+    // Note: Action items
+    let actions_md = action_list
+        .iter()
+        .map(|item| format!("- [ ] {}", item))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    ops.push(PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "note".to_string(),
+        title: format!("Retro - Action Items: {}", sprint_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "context": "retrospective/action-items",
+            "tags": "retrospective,action-items",
+            "items": action_list,
+        }),
+        body_md: Some(format!(
+            "# Action Items\n\n{}", actions_md
+        )),
+        status: Some("active".to_string()),
+        category: Some("org".to_string()),
+        priority: Some(1),
+    }));
+
+    Ok(ops)
+}
+
+// =============================================================================
+// content-case-study-builder template (enriched)
+// =============================================================================
+
+/// Generates a note entity for a case study.
+///
+/// Input params (JSON):
+///   - title / customer_name: String
+///   - industry: String
+///   - challenge: String
+///   - solution: String
+///   - results: String
+///   - quote: String (customer testimonial)
+///   - product: String
+///
+/// Output: 1 note entity with rich canonical fields
+fn generate_case_study_builder_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let customer_name = params
+        .get("title")
+        .or_else(|| params.get("customer_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Customer");
+    let industry = params
+        .get("industry")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Technology");
+    let challenge = params
+        .get("challenge")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Customer challenge to be described");
+    let solution = params
+        .get("solution")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Solution to be described");
+    let results = params
+        .get("results")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Results to be quantified");
+    let quote = params
+        .get("quote")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let product = params
+        .get("product")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Our product");
+
+    let quote_section = if quote.is_empty() {
+        "_Customer quote TBD_".to_string()
+    } else {
+        format!("> \"{}\"", quote)
+    };
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "note".to_string(),
+        title: format!("Case Study: {}", customer_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "context": format!("case-study/{}", industry),
+            "tags": format!("case-study,{},{}", industry, customer_name),
+            "industry": industry,
+            "customer": customer_name,
+            "product": product,
+            "challenge_summary": challenge,
+            "results_summary": results,
+        }),
+        body_md: Some(format!(
+            "# Case Study: {}\n\n**Industry**: {}\n**Product**: {}\n\n\
+            ## The Challenge\n{}\n\n## The Solution\n{}\n\n\
+            ## The Results\n{}\n\n## Customer Quote\n{}\n\n\
+            ## Key Metrics\n_TBD_\n\n## Lessons Learned\n_TBD_",
+            customer_name, industry, product, challenge, solution,
+            results, quote_section
+        )),
+        status: Some("draft".to_string()),
+        category: Some("content".to_string()),
+        priority: None,
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// content-creative-brief-builder template (enriched)
+// =============================================================================
+
+/// Generates a spec entity for a creative brief.
+///
+/// Input params (JSON):
+///   - title / project_name: String
+///   - objective: String
+///   - target_audience: String
+///   - key_message: String
+///   - tone: String (e.g., "professional", "casual", "bold")
+///   - deliverables: String (comma-separated)
+///   - brand_guidelines: String
+///   - deadline: String
+///
+/// Output: 1 spec entity with rich canonical fields
+fn generate_creative_brief_builder_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let project_name = params
+        .get("title")
+        .or_else(|| params.get("project_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Creative Project");
+    let objective = params
+        .get("objective")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Creative objective to be defined");
+    let target_audience = params
+        .get("target_audience")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Target audience to be defined");
+    let key_message = params
+        .get("key_message")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Key message to be defined");
+    let tone = params
+        .get("tone")
+        .and_then(|v| v.as_str())
+        .unwrap_or("professional");
+    let deliverables = params
+        .get("deliverables")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+    let brand_guidelines = params
+        .get("brand_guidelines")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Follow standard brand guidelines");
+    let deadline = params
+        .get("deadline")
+        .and_then(|v| v.as_str())
+        .unwrap_or("TBD");
+
+    let deliverable_list: Vec<&str> = deliverables
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let deliverables_md = deliverable_list
+        .iter()
+        .map(|d| format!("- {}", d))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "spec".to_string(),
+        title: format!("Creative Brief: {}", project_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "author": "creative-team",
+            "objective": objective,
+            "target_audience": target_audience,
+            "key_message": key_message,
+            "tone": tone,
+            "deliverables": deliverable_list,
+            "brand_guidelines": brand_guidelines,
+            "deadline": deadline,
+        }),
+        body_md: Some(format!(
+            "# Creative Brief: {}\n\n## Objective\n{}\n\n\
+            ## Target Audience\n{}\n\n## Key Message\n{}\n\n\
+            ## Tone & Voice\n{}\n\n## Deliverables\n{}\n\n\
+            ## Brand Guidelines\n{}\n\n## Deadline\n{}\n\n\
+            ## Inspiration / References\n_TBD_\n\n## Budget\n_TBD_",
+            project_name, objective, target_audience, key_message,
+            tone, deliverables_md, brand_guidelines, deadline
+        )),
+        status: Some("draft".to_string()),
+        category: Some("content".to_string()),
+        priority: Some(1),
+    })];
+
+    Ok(ops)
+}
+
+// =============================================================================
+// content-strategy-pillars-seo template (enriched)
+// =============================================================================
+
+/// Generates a spec + note entities for content strategy pillars with SEO focus.
+///
+/// Input params (JSON):
+///   - title / brand_name: String
+///   - pillars: String (semicolon-separated content pillars)
+///   - primary_keywords: String (comma-separated)
+///   - target_audience: String
+///   - content_goals: String
+///   - competitor_domains: String (comma-separated)
+///
+/// Output: 1 spec entity (strategy overview) + N note entities (one per pillar)
+fn generate_strategy_pillars_seo_ops(
+    params: &serde_json::Value,
+    _run_id: &str,
+) -> Result<Vec<PatchOp>> {
+    let brand_name = params
+        .get("title")
+        .or_else(|| params.get("brand_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Brand");
+    let pillars_str = params
+        .get("pillars")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Pillar 1; Pillar 2; Pillar 3");
+    let primary_keywords = params
+        .get("primary_keywords")
+        .and_then(|v| v.as_str())
+        .unwrap_or("keyword1, keyword2");
+    let target_audience = params
+        .get("target_audience")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Target audience");
+    let content_goals = params
+        .get("content_goals")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Organic traffic growth, thought leadership");
+    let competitor_domains = params
+        .get("competitor_domains")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let pillars: Vec<&str> = pillars_str
+        .split(';')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let keyword_list: Vec<&str> = primary_keywords
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let pillars_md = pillars
+        .iter()
+        .enumerate()
+        .map(|(i, p)| format!("{}. **{}**", i + 1, p))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut ops = Vec::new();
+
+    // Strategy overview spec
+    ops.push(PatchOp::CreateEntity(CreateEntityPayload {
+        entity_type: "spec".to_string(),
+        title: format!("Content Strategy: {}", brand_name),
+        source: "template".to_string(),
+        canonical_fields: serde_json::json!({
+            "author": "content-team",
+            "pillar_names": pillars,
+            "primary_keywords": keyword_list,
+            "target_audience": target_audience,
+            "content_goals": content_goals,
+            "competitor_domains": competitor_domains,
+        }),
+        body_md: Some(format!(
+            "# Content Strategy & SEO Pillars: {}\n\n## Target Audience\n{}\n\n\
+            ## Content Goals\n{}\n\n## Primary Keywords\n{}\n\n\
+            ## Content Pillars\n{}\n\n## Competitor Landscape\n{}\n\n\
+            ## Distribution Strategy\n_TBD_\n\n## Success Metrics\n_TBD_",
+            brand_name, target_audience, content_goals, primary_keywords,
+            pillars_md,
+            if competitor_domains.is_empty() { "_TBD_" } else { competitor_domains }
+        )),
+        status: Some("draft".to_string()),
+        category: Some("content".to_string()),
+        priority: Some(1),
+    }));
+
+    // One note per pillar
+    for (i, pillar) in pillars.iter().enumerate() {
+        ops.push(PatchOp::CreateEntity(CreateEntityPayload {
+            entity_type: "note".to_string(),
+            title: format!("Content Pillar {}: {}", i + 1, pillar),
+            source: "template".to_string(),
+            canonical_fields: serde_json::json!({
+                "context": format!("content-pillar/{}", brand_name),
+                "tags": format!("content-pillar,seo,{},{}", brand_name, pillar),
+                "pillar_number": i + 1,
+                "pillar_name": pillar,
+            }),
+            body_md: Some(format!(
+                "# Content Pillar: {}\n\n**Brand**: {}\n**Pillar #**: {}\n\n\
+                ## Topic Clusters\n_TBD_\n\n## Target Keywords\n_TBD_\n\n\
+                ## Content Ideas\n_TBD_\n\n## Publishing Cadence\n_TBD_\n\n\
+                ## Success Metrics\n_TBD_",
+                pillar, brand_name, i + 1
+            )),
+            status: Some("draft".to_string()),
+            category: Some("content".to_string()),
+            priority: Some(2),
+        }));
+    }
 
     Ok(ops)
 }

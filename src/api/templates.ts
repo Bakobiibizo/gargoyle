@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { PatchResult } from '../types';
+import type { PatchResult, Run } from '../types';
 
 // Matches Rust TemplateDefinition
 export interface TemplateDefinition {
@@ -43,4 +43,8 @@ export async function runTemplate(input: TemplateInput): Promise<TemplateOutput>
 
 export async function checkPrerequisites(templateKey: string): Promise<PrerequisiteResult[]> {
   return invoke('check_prerequisites', { templateKey });
+}
+
+export async function listRuns(templateKey?: string): Promise<Run[]> {
+  return invoke('list_runs', { templateKey: templateKey ?? null });
 }
