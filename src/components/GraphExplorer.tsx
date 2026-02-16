@@ -146,9 +146,10 @@ function getNodeColor(entityType: string): string {
 }
 
 const ENTITY_TYPES = [
-  'metric', 'experiment', 'result', 'task', 'project', 'decision',
-  'person', 'note', 'session', 'campaign', 'audience', 'competitor',
-  'channel', 'spec', 'budget', 'vendor', 'playbook',
+  'audience', 'backlog', 'brief', 'budget', 'campaign', 'channel',
+  'competitor', 'decision', 'event', 'experiment', 'metric', 'note',
+  'person', 'playbook', 'policy', 'project', 'result', 'session',
+  'spec', 'task', 'taxonomy', 'vendor',
 ];
 
 // ---------------------------------------------------------------------------
@@ -178,16 +179,17 @@ function runForceLayout(
   edges: LayoutEdge[],
   width: number,
   height: number,
-  iterations: number = 120,
+  iterations: number = 150,
 ): LayoutNode[] {
   const result = nodes.map((n) => ({ ...n }));
   const nodeMap = new Map(result.map((n) => [n.id, n]));
 
-  const repulsionStrength = 3000;
+  const repulsionStrength = 12000;
   const attractionStrength = 0.005;
-  const idealDistance = 120;
+  const idealDistance = 180;
   const damping = 0.85;
-  const centerGravity = 0.01;
+  const centerGravity = 0.003;
+  const minNodeDistance = 80;
 
   const cx = width / 2;
   const cy = height / 2;
@@ -257,6 +259,34 @@ function runForceLayout(
     }
   }
 
+  // Post-layout: enforce minimum distance between nodes
+  for (let pass = 0; pass < 5; pass++) {
+    for (let i = 0; i < result.length; i++) {
+      for (let j = i + 1; j < result.length; j++) {
+        const a = result[i];
+        const b = result[j];
+        let dx = a.x - b.x;
+        let dy = a.y - b.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < minNodeDistance && dist > 0) {
+          const overlap = (minNodeDistance - dist) / 2;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          a.x += nx * overlap;
+          a.y += ny * overlap;
+          b.x -= nx * overlap;
+          b.y -= ny * overlap;
+          // Re-clamp
+          const margin = 40;
+          a.x = Math.max(margin, Math.min(width - margin, a.x));
+          a.y = Math.max(margin, Math.min(height - margin, a.y));
+          b.x = Math.max(margin, Math.min(width - margin, b.x));
+          b.y = Math.max(margin, Math.min(height - margin, b.y));
+        }
+      }
+    }
+  }
+
   return result;
 }
 
@@ -277,10 +307,12 @@ export default function GraphExplorer({ onNavigateToEntity, initialEntityId }: G
   const [graph, setGraph] = useState<EntityGraph | null>(null);
   const [layoutNodes, setLayoutNodes] = useState<LayoutNode[]>([]);
   const [layoutEdges, setLayoutEdges] = useState<LayoutEdge[]>([]);
+  const [layoutSize, setLayoutSize] = useState<{ width: number; height: number }>({ width: 1200, height: 800 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [tooltip, setTooltip] = useState<{ x: number; y: number; node: LayoutNode } | null>(null);
   const [dragNode, setDragNode] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<LayoutNode | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -317,8 +349,13 @@ export default function GraphExplorer({ onNavigateToEntity, initialEntityId }: G
     if (!graph || !containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
-    const width = rect.width || 800;
-    const height = rect.height || 500;
+    const nodeCount = graph.nodes.length + 1; // +1 for root
+    // Scale canvas size with node count for better spacing
+    const baseWidth = rect.width || 800;
+    const baseHeight = rect.height || 500;
+    const scaleFactor = Math.max(1, Math.sqrt(nodeCount / 6));
+    const width = Math.max(1200, baseWidth * scaleFactor);
+    const height = Math.max(800, baseHeight * scaleFactor);
 
     // Combine root + nodes, deduplicate
     const allNodes = new Map<string, GraphNode>();
@@ -362,6 +399,7 @@ export default function GraphExplorer({ onNavigateToEntity, initialEntityId }: G
     const positioned = runForceLayout(lNodes, lEdges, width, height);
     setLayoutNodes(positioned);
     setLayoutEdges(lEdges);
+    setLayoutSize({ width, height });
   }, [graph, typeFilter]);
 
   // Handle drag
@@ -372,8 +410,11 @@ export default function GraphExplorer({ onNavigateToEntity, initialEntityId }: G
   function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
     if (!dragNode || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    // Translate screen coordinates to viewBox coordinates
+    const scaleX = layoutSize.width / rect.width;
+    const scaleY = layoutSize.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
     setLayoutNodes((prev) =>
       prev.map((n) => (n.id === dragNode ? { ...n, x, y } : n)),
     );
@@ -395,11 +436,16 @@ export default function GraphExplorer({ onNavigateToEntity, initialEntityId }: G
   }
 
   function handleNodeClick(node: LayoutNode) {
-    if (onNavigateToEntity) {
-      onNavigateToEntity(node.id);
+    if (selectedNode?.id === node.id) {
+      // Second click on the same node: navigate or re-center
+      if (onNavigateToEntity) {
+        onNavigateToEntity(node.id);
+      } else {
+        setSelectedEntityId(node.id);
+      }
     } else {
-      // Re-center graph on this entity
-      setSelectedEntityId(node.id);
+      // First click: select this node to show its details
+      setSelectedNode(node);
     }
   }
 
@@ -491,6 +537,8 @@ export default function GraphExplorer({ onNavigateToEntity, initialEntityId }: G
             ref={svgRef}
             width="100%"
             height="100%"
+            viewBox={`0 0 ${layoutSize.width} ${layoutSize.height}`}
+            preserveAspectRatio="xMidYMid meet"
             style={{ cursor: dragNode ? 'grabbing' : 'default' }}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -559,6 +607,7 @@ export default function GraphExplorer({ onNavigateToEntity, initialEntityId }: G
             {layoutNodes.map((node) => {
               const color = getNodeColor(node.entityType);
               const radius = node.isRoot ? 22 : 16;
+              const isSelected = selectedNode?.id === node.id;
 
               return (
                 <g
@@ -569,12 +618,16 @@ export default function GraphExplorer({ onNavigateToEntity, initialEntityId }: G
                   onMouseLeave={() => setTooltip(null)}
                   onClick={() => handleNodeClick(node)}
                 >
+                  {/* Selection highlight ring */}
+                  {isSelected && (
+                    <circle cx={node.x} cy={node.y} r={radius + 5} fill="none" stroke="#fff" strokeWidth={2} opacity={0.7} />
+                  )}
                   {/* Outer ring for root */}
                   {node.isRoot && (
                     <circle cx={node.x} cy={node.y} r={radius + 3} fill="none" stroke={color} strokeWidth={2} opacity={0.5} />
                   )}
                   {/* Node circle */}
-                  <circle cx={node.x} cy={node.y} r={radius} fill={color} opacity={0.85} />
+                  <circle cx={node.x} cy={node.y} r={radius} fill={color} opacity={isSelected ? 1.0 : 0.85} />
                   {/* Label */}
                   <text
                     x={node.x}
@@ -615,8 +668,57 @@ export default function GraphExplorer({ onNavigateToEntity, initialEntityId }: G
             <div style={{ opacity: 0.4, fontSize: '0.7rem', marginTop: '0.15rem', fontFamily: 'monospace' }}>
               {tooltip.node.id.slice(0, 12)}...
             </div>
-            <div style={{ opacity: 0.5, fontSize: '0.7rem', marginTop: '0.15rem' }}>
-              Click to {onNavigateToEntity ? 'view details' : 're-center graph'}
+          </div>
+        )}
+
+        {/* Selected node info bar */}
+        {selectedNode && (
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: '#1a1a2e',
+            borderTop: '1px solid rgba(255,255,255,0.15)',
+            padding: '0.5rem 0.75rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            fontSize: '0.8rem',
+            zIndex: 10,
+          }}>
+            <div style={{
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              background: getNodeColor(selectedNode.entityType),
+              flexShrink: 0,
+            }} />
+            <div style={{ fontWeight: 600 }}>{selectedNode.title}</div>
+            <div style={{ opacity: 0.6, fontSize: '0.75rem' }}>
+              {selectedNode.entityType} {selectedNode.status ? `\u2022 ${selectedNode.status}` : ''}
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+              {onNavigateToEntity && (
+                <button
+                  style={{ ...styles.button, padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                  onClick={() => onNavigateToEntity(selectedNode.id)}
+                >
+                  View Details
+                </button>
+              )}
+              <button
+                style={{ ...styles.button, ...styles.buttonSecondary, padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                onClick={() => { setSelectedEntityId(selectedNode.id); setSelectedNode(null); }}
+              >
+                Re-center
+              </button>
+              <button
+                style={{ ...styles.button, ...styles.buttonSecondary, padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                onClick={() => setSelectedNode(null)}
+              >
+                Dismiss
+              </button>
             </div>
           </div>
         )}

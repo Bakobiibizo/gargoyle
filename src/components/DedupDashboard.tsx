@@ -383,8 +383,8 @@ function MergeConfirmModal({ suggestion, onConfirm, onCancel, loading }: MergeMo
   }, [suggestion.new_entity_id, suggestion.existing_entity_id]);
 
   return (
-    <div style={styles.confirmOverlay} onClick={onCancel}>
-      <div style={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
+    <div style={styles.confirmOverlay} onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div style={styles.confirmModal}>
         <h3 style={styles.formTitle}>Confirm Merge</h3>
         <p style={{ fontSize: '0.85rem', opacity: 0.7, margin: '0 0 1rem' }}>
           Review the two entities below. Accepting this suggestion will mark it as accepted.

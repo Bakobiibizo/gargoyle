@@ -740,16 +740,17 @@ fn generate_ops(
     key: &str,
     params: &serde_json::Value,
     run_id: &str,
+    force: bool,
 ) -> Result<Vec<PatchOp>> {
     match key {
         "analytics-metric-tree" => generate_metric_tree_ops(params, run_id),
-        "analytics-experiment-plan" => generate_experiment_plan_ops(conn, params, run_id),
+        "analytics-experiment-plan" => generate_experiment_plan_ops(conn, params, run_id, force),
         "analytics-anomaly-investigation" => {
-            generate_anomaly_investigation_entity_ops(conn, params, run_id)
+            generate_anomaly_investigation_entity_ops(conn, params, run_id, force)
         }
         "mkt-icp-definition" => generate_icp_definition_ops(params, run_id),
         "mkt-competitive-intel" => generate_competitive_intel_ops(params, run_id),
-        "mkt-positioning-narrative" => generate_positioning_narrative_ops(conn, params, run_id),
+        "mkt-positioning-narrative" => generate_positioning_narrative_ops(conn, params, run_id, force),
         // Dev templates (enriched)
         "dev-adr-writer" => generate_adr_writer_ops(params, run_id),
         "dev-api-design" => generate_api_design_ops(params, run_id),
@@ -835,7 +836,7 @@ pub fn run_template(
     let run_id = uuid::Uuid::new_v4().to_string();
 
     // 4. Generate PatchOps
-    let ops = generate_ops(conn, &input.template_key, &input.params, &run_id)?;
+    let ops = generate_ops(conn, &input.template_key, &input.params, &run_id, input.force)?;
 
     // 5. Build and apply PatchSet
     let patch_set = PatchSet {
@@ -1081,13 +1082,14 @@ fn create_metric_tree_relations(
 /// Input params (JSON):
 ///   - hypothesis: String
 ///   - funnel_position: String
-///   - metric_entity_id: String (existing metric entity ID)
+///   - metric_id: String (existing metric entity ID, optional when force=true)
 ///
 /// Output: 1 experiment entity (relations created in phase 2)
 fn generate_experiment_plan_ops(
     conn: &rusqlite::Connection,
     params: &serde_json::Value,
     _run_id: &str,
+    force: bool,
 ) -> Result<Vec<PatchOp>> {
     let hypothesis = params
         .get("hypothesis")
@@ -1097,27 +1099,30 @@ fn generate_experiment_plan_ops(
         .get("funnel_position")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
-    let metric_entity_id = params
-        .get("metric_entity_id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            GargoyleError::Schema("Missing required param: metric_entity_id".to_string())
-        })?;
+    let metric_id = params
+        .get("metric_id")
+        .and_then(|v| v.as_str());
 
-    // Verify metric exists and is not deleted
-    let _metric_exists: String = conn
-        .query_row(
-            "SELECT id FROM entities WHERE id = ?1 AND deleted_at IS NULL",
-            rusqlite::params![metric_entity_id],
-            |row| row.get(0),
-        )
-        .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
-                entity_type: "metric".to_string(),
-                id: metric_entity_id.to_string(),
-            },
-            other => GargoyleError::Database(other),
-        })?;
+    if metric_id.is_none() && !force {
+        return Err(GargoyleError::Schema("Missing required param: metric_id".to_string()));
+    }
+
+    // Verify metric exists and is not deleted (skip if force and no metric_id)
+    if let Some(mid) = metric_id {
+        let _metric_exists: String = conn
+            .query_row(
+                "SELECT id FROM entities WHERE id = ?1 AND deleted_at IS NULL",
+                rusqlite::params![mid],
+                |row| row.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
+                    entity_type: "metric".to_string(),
+                    id: mid.to_string(),
+                },
+                other => GargoyleError::Database(other),
+            })?;
+    }
 
     // Truncate hypothesis to 60 chars for the title
     let truncated_hypothesis = if hypothesis.len() > 60 {
@@ -1152,13 +1157,13 @@ fn generate_experiment_plan_ops(
 /// Experiment `tests` metric and experiment `measures` metric.
 fn create_experiment_plan_relations(
     experiment_id: &str,
-    metric_entity_id: &str,
+    metric_id: &str,
     run_id: &str,
 ) -> Vec<PatchOp> {
     vec![
         PatchOp::CreateRelation(CreateRelationPayload {
             from_id: experiment_id.to_string(),
-            to_id: metric_entity_id.to_string(),
+            to_id: metric_id.to_string(),
             relation_type: "tests".to_string(),
             weight: Some(1.0),
             confidence: None,
@@ -1166,7 +1171,7 @@ fn create_experiment_plan_relations(
         }),
         PatchOp::CreateRelation(CreateRelationPayload {
             from_id: experiment_id.to_string(),
-            to_id: metric_entity_id.to_string(),
+            to_id: metric_id.to_string(),
             relation_type: "measures".to_string(),
             weight: Some(1.0),
             confidence: None,
@@ -1182,7 +1187,8 @@ fn create_experiment_plan_relations(
 /// Generates entity ops for the analytics-anomaly-investigation template (phase 1).
 ///
 /// Input params (JSON):
-///   - kpi_entity_id: String (existing metric entity ID)
+///   - experiment_id: String (existing experiment entity ID, optional when force=true)
+///   - anomaly_description: String
 ///   - time_window: String (e.g. "last_30_days")
 ///   - baseline_period: String (e.g. "previous_quarter")
 ///
@@ -1191,13 +1197,20 @@ fn generate_anomaly_investigation_entity_ops(
     conn: &rusqlite::Connection,
     params: &serde_json::Value,
     _run_id: &str,
+    force: bool,
 ) -> Result<Vec<PatchOp>> {
-    let kpi_entity_id = params
-        .get("kpi_entity_id")
+    let experiment_id = params
+        .get("experiment_id")
+        .and_then(|v| v.as_str());
+
+    if experiment_id.is_none() && !force {
+        return Err(GargoyleError::Schema("Missing required param: experiment_id".to_string()));
+    }
+
+    let anomaly_description = params
+        .get("anomaly_description")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            GargoyleError::Schema("Missing required param: kpi_entity_id".to_string())
-        })?;
+        .unwrap_or("Anomaly under investigation");
 
     let _time_window = params
         .get("time_window")
@@ -1209,22 +1222,25 @@ fn generate_anomaly_investigation_entity_ops(
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
-    // Look up metric title from the database
-    let metric_title: String = conn
-        .query_row(
+    // Look up experiment title from the database (skip if force and no experiment_id)
+    let experiment_title: String = if let Some(eid) = experiment_id {
+        conn.query_row(
             "SELECT title FROM entities WHERE id = ?1 AND deleted_at IS NULL",
-            rusqlite::params![kpi_entity_id],
+            rusqlite::params![eid],
             |row| row.get(0),
         )
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
-                entity_type: "metric".to_string(),
-                id: kpi_entity_id.to_string(),
+                entity_type: "experiment".to_string(),
+                id: eid.to_string(),
             },
             other => GargoyleError::Database(other),
-        })?;
+        })?
+    } else {
+        "Unknown Experiment".to_string()
+    };
 
-    let title = format!("Anomaly Investigation: {}", metric_title);
+    let title = format!("Anomaly Investigation: {}", experiment_title);
 
     let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
         entity_type: "result".to_string(),
@@ -1234,10 +1250,11 @@ fn generate_anomaly_investigation_entity_ops(
             "findings": "Investigation pending",
             "methodology": "time_series_comparison",
             "confidence_level": 0.0,
+            "anomaly_description": anomaly_description,
         }),
         body_md: Some(format!(
-            "Anomaly investigation for metric: {}\nTime window: {}\nBaseline period: {}",
-            metric_title, _time_window, _baseline_period
+            "Anomaly investigation for experiment: {}\nAnomaly: {}\nTime window: {}\nBaseline period: {}",
+            experiment_title, anomaly_description, _time_window, _baseline_period
         )),
         status: Some("draft".to_string()),
         category: None,
@@ -1248,26 +1265,26 @@ fn generate_anomaly_investigation_entity_ops(
 }
 
 /// Creates phase 2 ops for the anomaly-investigation template:
-/// - 1 relation: result `evidence_for` metric
+/// - 1 relation: result `evidence_for` experiment
 /// - 1 claim: anomaly detected in time_window, grounded to the result entity
 fn create_anomaly_investigation_phase2_ops(
     result_entity_id: &str,
-    kpi_entity_id: &str,
-    metric_title: &str,
+    experiment_id: &str,
+    experiment_title: &str,
     time_window: &str,
     run_id: &str,
 ) -> Vec<PatchOp> {
     vec![
         PatchOp::CreateRelation(CreateRelationPayload {
             from_id: result_entity_id.to_string(),
-            to_id: kpi_entity_id.to_string(),
+            to_id: experiment_id.to_string(),
             relation_type: "evidence_for".to_string(),
             weight: Some(1.0),
             confidence: None,
             provenance_run_id: Some(run_id.to_string()),
         }),
         PatchOp::CreateClaim(CreateClaimPayload {
-            subject: metric_title.to_string(),
+            subject: experiment_title.to_string(),
             predicate: "anomaly_detected_in".to_string(),
             object: time_window.to_string(),
             confidence: 0.5,
@@ -1317,7 +1334,7 @@ pub fn run_template_full(
     let run_id = uuid::Uuid::new_v4().to_string();
 
     // 4. Generate entity PatchOps (phase 1)
-    let entity_ops = generate_ops(conn, &input.template_key, &input.params, &run_id)?;
+    let entity_ops = generate_ops(conn, &input.template_key, &input.params, &run_id, input.force)?;
 
     // 5. Apply entity PatchSet
     let entity_patch_set = PatchSet {
@@ -1337,6 +1354,7 @@ pub fn run_template_full(
         &input.params,
         &run_id,
         &entity_result,
+        input.force,
     )?;
 
     if !phase2_ops.is_empty() {
@@ -1406,6 +1424,7 @@ fn generate_phase2_ops(
     params: &serde_json::Value,
     run_id: &str,
     phase1_result: &PatchResult,
+    force: bool,
 ) -> Result<Vec<PatchOp>> {
     match key {
         "analytics-metric-tree" => {
@@ -1435,22 +1454,26 @@ fn generate_phase2_ops(
                 .as_ref()
                 .expect("Experiment entity should have entity_id");
 
-            let metric_entity_id = params
-                .get("metric_entity_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    GargoyleError::Schema("Missing required param: metric_entity_id".to_string())
-                })?;
+            let metric_id = params
+                .get("metric_id")
+                .and_then(|v| v.as_str());
 
-            Ok(create_experiment_plan_relations(
-                experiment_id,
-                metric_entity_id,
-                run_id,
-            ))
+            if let Some(mid) = metric_id {
+                Ok(create_experiment_plan_relations(
+                    experiment_id,
+                    mid,
+                    run_id,
+                ))
+            } else if force {
+                // Skip relations when force=true and no metric_id provided
+                Ok(vec![])
+            } else {
+                Err(GargoyleError::Schema("Missing required param: metric_id".to_string()))
+            }
         }
         "analytics-anomaly-investigation" => {
             // Phase 1 creates the result entity.
-            // Phase 2 creates the relation (result -> metric) and the claim.
+            // Phase 2 creates the relation (result -> experiment) and the claim.
             if phase1_result.applied.is_empty() {
                 return Ok(vec![]);
             }
@@ -1459,40 +1482,44 @@ fn generate_phase2_ops(
                 .as_ref()
                 .expect("Result entity should have entity_id");
 
-            let kpi_entity_id = params
-                .get("kpi_entity_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    GargoyleError::Schema("Missing required param: kpi_entity_id".to_string())
-                })?;
+            let experiment_id = params
+                .get("experiment_id")
+                .and_then(|v| v.as_str());
 
             let time_window = params
                 .get("time_window")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
 
-            // Look up metric title for the claim subject
-            let metric_title: String = conn
-                .query_row(
-                    "SELECT title FROM entities WHERE id = ?1 AND deleted_at IS NULL",
-                    params![kpi_entity_id],
-                    |row| row.get(0),
-                )
-                .map_err(|e| match e {
-                    rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
-                        entity_type: "metric".to_string(),
-                        id: kpi_entity_id.to_string(),
-                    },
-                    other => GargoyleError::Database(other),
-                })?;
+            if let Some(eid) = experiment_id {
+                // Look up experiment title for the claim subject
+                let experiment_title: String = conn
+                    .query_row(
+                        "SELECT title FROM entities WHERE id = ?1 AND deleted_at IS NULL",
+                        params![eid],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| match e {
+                        rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
+                            entity_type: "experiment".to_string(),
+                            id: eid.to_string(),
+                        },
+                        other => GargoyleError::Database(other),
+                    })?;
 
-            Ok(create_anomaly_investigation_phase2_ops(
-                result_entity_id,
-                kpi_entity_id,
-                &metric_title,
-                time_window,
-                run_id,
-            ))
+                Ok(create_anomaly_investigation_phase2_ops(
+                    result_entity_id,
+                    eid,
+                    &experiment_title,
+                    time_window,
+                    run_id,
+                ))
+            } else if force {
+                // Skip relations when force=true and no experiment_id provided
+                Ok(vec![])
+            } else {
+                Err(GargoyleError::Schema("Missing required param: experiment_id".to_string()))
+            }
         }
         "mkt-icp-definition" => {
             // Phase 2: create relations between generated ICP persona entities
@@ -1528,21 +1555,25 @@ fn generate_phase2_ops(
                 .as_ref()
                 .expect("Decision entity should have entity_id");
 
-            let icp_entity_id = params
-                .get("icp_entity_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    GargoyleError::Schema("Missing required param: icp_entity_id".to_string())
-                })?;
+            let person_id = params
+                .get("person_id")
+                .and_then(|v| v.as_str());
 
-            Ok(vec![PatchOp::CreateRelation(CreateRelationPayload {
-                from_id: decision_id.to_string(),
-                to_id: icp_entity_id.to_string(),
-                relation_type: "supports".to_string(),
-                weight: Some(1.0),
-                confidence: None,
-                provenance_run_id: Some(run_id.to_string()),
-            })])
+            if let Some(pid) = person_id {
+                Ok(vec![PatchOp::CreateRelation(CreateRelationPayload {
+                    from_id: decision_id.to_string(),
+                    to_id: pid.to_string(),
+                    relation_type: "supports".to_string(),
+                    weight: Some(1.0),
+                    confidence: None,
+                    provenance_run_id: Some(run_id.to_string()),
+                })])
+            } else if force {
+                // Skip relations when force=true and no person_id provided
+                Ok(vec![])
+            } else {
+                Err(GargoyleError::Schema("Missing required param: person_id".to_string()))
+            }
         }
         "org-decision-log" => {
             // Phase 2: create related_to relations between decision entities
@@ -2380,13 +2411,14 @@ fn create_competitive_intel_relations(entity_ids: &[String], run_id: &str) -> Ve
 /// Input params (JSON):
 ///   - product: String
 ///   - category: String
-///   - icp_entity_id: String (references person from ICP template)
+///   - person_id: String (references person from ICP template, optional when force=true)
 ///
 /// Output: 1 decision entity (positioning decision)
 fn generate_positioning_narrative_ops(
     conn: &rusqlite::Connection,
     params: &serde_json::Value,
     _run_id: &str,
+    force: bool,
 ) -> Result<Vec<PatchOp>> {
     let product = params
         .get("product")
@@ -2396,27 +2428,31 @@ fn generate_positioning_narrative_ops(
         .get("category")
         .and_then(|v| v.as_str())
         .unwrap_or("General");
-    let icp_entity_id = params
-        .get("icp_entity_id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            GargoyleError::Schema("Missing required param: icp_entity_id".to_string())
-        })?;
+    let person_id = params
+        .get("person_id")
+        .and_then(|v| v.as_str());
 
-    // Verify the ICP person entity exists
-    let icp_title: String = conn
-        .query_row(
+    if person_id.is_none() && !force {
+        return Err(GargoyleError::Schema("Missing required param: person_id".to_string()));
+    }
+
+    // Verify the ICP person entity exists (skip if force and no person_id)
+    let icp_title: String = if let Some(pid) = person_id {
+        conn.query_row(
             "SELECT title FROM entities WHERE id = ?1 AND entity_type = 'person' AND deleted_at IS NULL",
-            rusqlite::params![icp_entity_id],
+            rusqlite::params![pid],
             |row| row.get(0),
         )
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
                 entity_type: "person".to_string(),
-                id: icp_entity_id.to_string(),
+                id: pid.to_string(),
             },
             other => GargoyleError::Database(other),
-        })?;
+        })?
+    } else {
+        "Unknown ICP".to_string()
+    };
 
     let ops = vec![PatchOp::CreateEntity(CreateEntityPayload {
         entity_type: "decision".to_string(),

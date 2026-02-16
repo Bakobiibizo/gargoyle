@@ -56,6 +56,12 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* Dark mode dropdown option styling */
+select option {
+  background: #1a1a2e;
+  color: #e0e0e0;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;

@@ -51,7 +51,7 @@ fn test_5_concurrent_experiment_plans() {
             params: json!({
                 "hypothesis": format!("Hypothesis {}: Testing growth lever", i + 1),
                 "funnel_position": "activation",
-                "metric_entity_id": metric_entity_id
+                "metric_id": metric_entity_id
             }),
             force: false,
         };
@@ -160,7 +160,7 @@ fn test_concurrent_experiments_each_has_unique_title() {
                      "Onboarding flow improves NPS", "Email cadence drives retention",
                      "Referral incentive increases virality"][i]),
                 "funnel_position": "activation",
-                "metric_entity_id": metric_entity_id
+                "metric_id": metric_entity_id
             }),
             force: false,
         };
@@ -210,7 +210,7 @@ fn test_concurrent_experiments_run_status_all_applied() {
             params: json!({
                 "hypothesis": format!("Status Test Hypothesis {}", i + 1),
                 "funnel_position": "activation",
-                "metric_entity_id": metric_entity_id
+                "metric_id": metric_entity_id
             }),
             force: false,
         };

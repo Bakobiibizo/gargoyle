@@ -17,13 +17,52 @@ pub struct SearchResult {
 
 pub struct IndexerService;
 
+/// Prepare an FTS5 query string with prefix matching on the last token.
+///
+/// Splits the query by whitespace, appends `*` to the last token (unless it
+/// already ends with `*`), and rejoins. Returns an empty string for empty or
+/// whitespace-only input.
+fn prepare_fts_query(query: &str) -> String {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let mut tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    if tokens.is_empty() {
+        return String::new();
+    }
+
+    // Append * to the last token for prefix matching, if not already present
+    let last = tokens.last().unwrap();
+    if !last.ends_with('*') {
+        let suffixed = format!("{}*", last);
+        let len = tokens.len();
+        tokens.remove(len - 1);
+        let mut result: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
+        result.push(suffixed);
+        result.join(" ")
+    } else {
+        tokens.join(" ")
+    }
+}
+
 impl IndexerService {
     /// Full-text search using FTS5.
     ///
     /// Queries the entities_fts virtual table with bm25() ranking,
     /// joins back to entities to retrieve entity_type and filter out
     /// soft-deleted rows.
+    ///
+    /// Automatically appends `*` to the last token in the query to enable
+    /// prefix matching. For example, "he" becomes "he*" which matches
+    /// "heuristic", "hello", etc.
     pub fn search_fts(conn: &Connection, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
+        let fts_query = prepare_fts_query(query);
+        if fts_query.is_empty() {
+            return Ok(vec![]);
+        }
+
         let mut stmt = conn.prepare(
             "SELECT e.id, e.title, e.entity_type, bm25(entities_fts) AS score
              FROM entities_fts f
@@ -34,7 +73,7 @@ impl IndexerService {
              LIMIT ?2",
         )?;
 
-        let rows = stmt.query_map(params![query, limit as i64], |row| {
+        let rows = stmt.query_map(params![fts_query, limit as i64], |row| {
             Ok(SearchResult {
                 entity_id: row.get(0)?,
                 title: row.get(1)?,

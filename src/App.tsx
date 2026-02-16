@@ -159,6 +159,7 @@ const styles = {
 function App() {
   const [activeTab, setActiveTab] = useState<TabId>('entities');
   const [graphEntityId, setGraphEntityId] = useState<string | undefined>();
+  const [focusEntityId, setFocusEntityId] = useState<string | undefined>();
 
   // Navigate to entity detail by switching tabs
   function handleNavigateToEntity(entityId: string) {
@@ -169,7 +170,9 @@ function App() {
 
   // Handle search result selection from the header bar
   function handleSearchSelect(entityId: string) {
-    handleNavigateToEntity(entityId);
+    // Navigate to the Entities tab and expand the selected entity
+    setFocusEntityId(entityId);
+    setActiveTab('entities');
   }
 
   return (
@@ -211,7 +214,11 @@ function App() {
         {/* Content area */}
         <div style={styles.content}>
           {activeTab === 'entities' && (
-            <EntityManager onNavigateToEntity={handleNavigateToEntity} />
+            <EntityManager
+              onNavigateToEntity={handleNavigateToEntity}
+              focusEntityId={focusEntityId}
+              onFocusHandled={() => setFocusEntityId(undefined)}
+            />
           )}
 
           {activeTab === 'templates' && (

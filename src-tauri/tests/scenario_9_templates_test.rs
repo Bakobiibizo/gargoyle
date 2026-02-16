@@ -40,17 +40,33 @@ fn pick_metric_id(output: &TemplateOutput) -> String {
         .expect("Should have at least one entity with an ID")
 }
 
+/// Helper: pick the experiment entity ID from an experiment-plan output.
+fn pick_experiment_id(output: &TemplateOutput) -> String {
+    output
+        .patch_result
+        .applied
+        .iter()
+        .find_map(|op| {
+            if op.entity_id.is_some() && op.relation_id.is_none() && op.claim_id.is_none() {
+                op.entity_id.clone()
+            } else {
+                None
+            }
+        })
+        .expect("Should have at least one experiment entity with an ID")
+}
+
 /// Helper: run the experiment-plan template.
 fn run_experiment_plan(
     conn: &rusqlite::Connection,
-    metric_entity_id: &str,
+    metric_id: &str,
 ) -> TemplateOutput {
     let input = TemplateInput {
         template_key: "analytics-experiment-plan".to_string(),
         params: json!({
             "hypothesis": "Increasing trial length from 14 to 30 days will improve activation rate",
             "funnel_position": "activation",
-            "metric_entity_id": metric_entity_id
+            "metric_id": metric_id
         }),
         force: false,
     };
@@ -60,12 +76,13 @@ fn run_experiment_plan(
 /// Helper: run the anomaly-investigation template.
 fn run_anomaly_investigation(
     conn: &rusqlite::Connection,
-    kpi_entity_id: &str,
+    experiment_id: &str,
 ) -> TemplateOutput {
     let input = TemplateInput {
         template_key: "analytics-anomaly-investigation".to_string(),
         params: json!({
-            "kpi_entity_id": kpi_entity_id,
+            "experiment_id": experiment_id,
+            "anomaly_description": "Unexpected anomaly in experiment results",
             "time_window": "last_30_days",
             "baseline_period": "previous_quarter"
         }),
@@ -146,8 +163,8 @@ fn test_full_3_template_chain() {
     assert_eq!(source, "template");
     assert_eq!(status, Some("draft".to_string()));
 
-    // Step 4: Run analytics-anomaly-investigation with the same metric_id
-    let ai_output = run_anomaly_investigation(&conn, &metric_id);
+    // Step 4: Run analytics-anomaly-investigation with the experiment_id from step 3
+    let ai_output = run_anomaly_investigation(&conn, experiment_id);
     assert!(!ai_output.run_id.is_empty());
     assert_ne!(ai_output.run_id, ep_output.run_id);
 
@@ -334,7 +351,7 @@ fn test_advisory_enforcement_experiment_plan_force_false() {
         params: json!({
             "hypothesis": "Test hypothesis",
             "funnel_position": "activation",
-            "metric_entity_id": "nonexistent-id"
+            "metric_id": "nonexistent-id"
         }),
         force: false,
     };
@@ -358,24 +375,14 @@ fn test_advisory_enforcement_experiment_plan_force_true() {
     let metric_id = uuid::Uuid::new_v4().to_string();
     common::insert_test_metric(&conn, &metric_id, "Test Metric");
 
-    // Now soft-delete all metrics so prerequisite is not satisfied
-    // But we keep the entity in the DB (deleted) so it exists for FK,
-    // Actually let's create a fresh metric but delete it so prereq fails.
-    // Then create another metric so the template can reference it.
-    //
-    // Actually the prereq checks for entity_type=metric with deleted_at IS NULL.
-    // If we delete the metric, the template's entity lookup will also fail.
-    // So let's just test force=true with a metric present.
-    //
-    // The experiment-plan requires metric(1). If we have 1 metric, prereqs are met.
-    // But anomaly-investigation requires experiment(1), and we have 0 experiments.
-    // Let's test force=true with anomaly-investigation instead, since that
-    // requires an experiment but we can still have a metric to reference.
+    // The anomaly-investigation requires experiment(1) prerequisite, and we have 0 experiments.
+    // Force=true should bypass prerequisite checks.
+    // We also test with experiment_id omitted so the template handles it gracefully.
 
     let input = TemplateInput {
         template_key: "analytics-anomaly-investigation".to_string(),
         params: json!({
-            "kpi_entity_id": metric_id,
+            "anomaly_description": "Unexpected drop in metric",
             "time_window": "last_7_days",
             "baseline_period": "previous_month"
         }),
@@ -410,13 +417,16 @@ fn test_advisory_enforcement_anomaly_force_false_fails() {
     let conn = common::test_db();
 
     // No experiments exist, anomaly-investigation with force=false should fail
-    let metric_id = uuid::Uuid::new_v4().to_string();
-    common::insert_test_metric(&conn, &metric_id, "Some Metric");
+    let experiment_id = uuid::Uuid::new_v4().to_string();
+    common::insert_test_experiment(&conn, &experiment_id, "Some Experiment");
+    // Soft-delete it so the prerequisite fails
+    common::soft_delete_entity(&conn, &experiment_id);
 
     let input = TemplateInput {
         template_key: "analytics-anomaly-investigation".to_string(),
         params: json!({
-            "kpi_entity_id": metric_id,
+            "experiment_id": experiment_id,
+            "anomaly_description": "Test anomaly",
             "time_window": "last_30_days",
             "baseline_period": "previous_quarter"
         }),
@@ -552,9 +562,10 @@ fn test_provenance_reconstruction_anomaly_investigation() {
     // Setup: full chain
     let mt_output = run_metric_tree(&conn);
     let metric_id = pick_metric_id(&mt_output);
-    let _ep_output = run_experiment_plan(&conn, &metric_id);
+    let ep_output = run_experiment_plan(&conn, &metric_id);
+    let experiment_id = pick_experiment_id(&ep_output);
 
-    let ai_output = run_anomaly_investigation(&conn, &metric_id);
+    let ai_output = run_anomaly_investigation(&conn, &experiment_id);
 
     // Verify result entity is traceable
     let entity_count: usize = conn
@@ -614,7 +625,8 @@ fn test_provenance_100_percent_coverage_full_chain() {
     let mt_output = run_metric_tree(&conn);
     let metric_id = pick_metric_id(&mt_output);
     let ep_output = run_experiment_plan(&conn, &metric_id);
-    let ai_output = run_anomaly_investigation(&conn, &metric_id);
+    let experiment_id = pick_experiment_id(&ep_output);
+    let ai_output = run_anomaly_investigation(&conn, &experiment_id);
 
     let run_ids = vec![&mt_output.run_id, &ep_output.run_id, &ai_output.run_id];
 
@@ -732,7 +744,7 @@ fn test_run_logging_experiment_plan() {
         "inputs_snapshot should contain the hypothesis"
     );
     assert_eq!(inputs["funnel_position"], "activation");
-    assert_eq!(inputs["metric_entity_id"], metric_id);
+    assert_eq!(inputs["metric_id"], metric_id);
 }
 
 #[test]
@@ -742,8 +754,9 @@ fn test_run_logging_anomaly_investigation() {
     // Setup: full chain
     let mt_output = run_metric_tree(&conn);
     let metric_id = pick_metric_id(&mt_output);
-    let _ep_output = run_experiment_plan(&conn, &metric_id);
-    let ai_output = run_anomaly_investigation(&conn, &metric_id);
+    let ep_output = run_experiment_plan(&conn, &metric_id);
+    let experiment_id = pick_experiment_id(&ep_output);
+    let ai_output = run_anomaly_investigation(&conn, &experiment_id);
 
     let (template_key, template_category, status, inputs_snapshot): (
         String,
@@ -763,7 +776,7 @@ fn test_run_logging_anomaly_investigation() {
     assert_eq!(status, "applied");
 
     let inputs: serde_json::Value = serde_json::from_str(&inputs_snapshot).unwrap();
-    assert_eq!(inputs["kpi_entity_id"], metric_id);
+    assert_eq!(inputs["experiment_id"], experiment_id);
     assert_eq!(inputs["time_window"], "last_30_days");
     assert_eq!(inputs["baseline_period"], "previous_quarter");
 }
@@ -775,7 +788,8 @@ fn test_run_logging_each_run_has_unique_id() {
     let mt_output = run_metric_tree(&conn);
     let metric_id = pick_metric_id(&mt_output);
     let ep_output = run_experiment_plan(&conn, &metric_id);
-    let ai_output = run_anomaly_investigation(&conn, &metric_id);
+    let experiment_id = pick_experiment_id(&ep_output);
+    let ai_output = run_anomaly_investigation(&conn, &experiment_id);
 
     // All run IDs should be unique
     assert_ne!(mt_output.run_id, ep_output.run_id);
@@ -807,7 +821,7 @@ fn test_experiment_plan_with_nonexistent_metric() {
         params: json!({
             "hypothesis": "Test",
             "funnel_position": "activation",
-            "metric_entity_id": "nonexistent-metric-id"
+            "metric_id": "nonexistent-metric-id"
         }),
         force: false,
     };
@@ -815,12 +829,12 @@ fn test_experiment_plan_with_nonexistent_metric() {
     let result = run_template_full(&conn, &input);
     assert!(
         result.is_err(),
-        "Should fail when metric_entity_id doesn't exist"
+        "Should fail when metric_id doesn't exist"
     );
 }
 
 #[test]
-fn test_anomaly_investigation_with_nonexistent_kpi() {
+fn test_anomaly_investigation_with_nonexistent_experiment() {
     let conn = common::test_db();
 
     // Insert experiment so prerequisite is met
@@ -830,7 +844,8 @@ fn test_anomaly_investigation_with_nonexistent_kpi() {
     let input = TemplateInput {
         template_key: "analytics-anomaly-investigation".to_string(),
         params: json!({
-            "kpi_entity_id": "nonexistent-kpi-id",
+            "experiment_id": "nonexistent-experiment-id",
+            "anomaly_description": "Test anomaly",
             "time_window": "last_30_days",
             "baseline_period": "previous_quarter"
         }),
@@ -840,7 +855,7 @@ fn test_anomaly_investigation_with_nonexistent_kpi() {
     let result = run_template_full(&conn, &input);
     assert!(
         result.is_err(),
-        "Should fail when kpi_entity_id doesn't exist"
+        "Should fail when experiment_id doesn't exist"
     );
 }
 
@@ -887,8 +902,9 @@ fn test_anomaly_investigation_result_has_correct_canonical_fields() {
 
     let mt_output = run_metric_tree(&conn);
     let metric_id = pick_metric_id(&mt_output);
-    let _ep_output = run_experiment_plan(&conn, &metric_id);
-    let ai_output = run_anomaly_investigation(&conn, &metric_id);
+    let ep_output = run_experiment_plan(&conn, &metric_id);
+    let experiment_id = pick_experiment_id(&ep_output);
+    let ai_output = run_anomaly_investigation(&conn, &experiment_id);
 
     let result_entity_id = ai_output
         .patch_result

@@ -7,6 +7,7 @@ import {
   type PrerequisiteResult,
   type TemplateOutput,
 } from '../api/templates';
+import SearchableSelect from './SearchableSelect';
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -290,18 +291,15 @@ export default function TemplateRunner() {
       {/* Template selector */}
       <div style={styles.section}>
         <div style={styles.sectionTitle}>Select Template</div>
-        <select
-          style={styles.select}
+        <SearchableSelect
+          options={[...templates].sort((a, b) => a.key.localeCompare(b.key)).map((t) => ({
+            value: t.key,
+            label: `[${t.category}] ${t.key} (v${t.version})`,
+          }))}
           value={selectedKey}
-          onChange={(e) => setSelectedKey(e.target.value)}
-        >
-          <option value="">-- Choose a template --</option>
-          {templates.map((t) => (
-            <option key={t.key} value={t.key}>
-              [{t.category}] {t.key} (v{t.version})
-            </option>
-          ))}
-        </select>
+          onChange={setSelectedKey}
+          placeholder="Search templates..."
+        />
 
         {selectedTemplate && (
           <div style={styles.templateMeta}>

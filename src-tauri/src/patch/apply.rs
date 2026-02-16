@@ -5,6 +5,7 @@ use crate::patch::create_entity::execute_create_entity;
 use crate::patch::create_relation::execute_create_relation;
 use crate::patch::update_entity::execute_update_entity;
 use crate::schema::registry::SchemaRegistry;
+use crate::services::dedup::DedupPipeline;
 
 /// Applies a PatchSet atomically within a database transaction.
 ///
@@ -41,6 +42,19 @@ pub fn apply_patch_set(
     }
 
     conn.execute_batch("COMMIT")?;
+
+    // Post-commit: run dedup pipeline for any newly created entities.
+    // This is non-blocking -- dedup failures are swallowed and never
+    // prevent entity creation from succeeding.
+    for applied_op in &result.applied {
+        if let Some(ref entity_id) = applied_op.entity_id {
+            // Only run dedup for CreateEntity ops (not updates).
+            // We check the op type to avoid running dedup on updates.
+            if let Some(PatchOp::CreateEntity(_)) = patch_set.ops.get(applied_op.op_index) {
+                let _ = DedupPipeline::check_for_duplicates(conn, entity_id);
+            }
+        }
+    }
 
     Ok(result)
 }

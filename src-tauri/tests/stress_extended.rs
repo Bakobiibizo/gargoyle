@@ -798,7 +798,10 @@ fn test_template_prerequisite_wave2b_dependencies() {
 // =============================================================================
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(50))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(50)
+    })]
 
     #[test]
     fn fuzz_create_metric_extended(
@@ -1274,7 +1277,10 @@ proptest! {
 // =============================================================================
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(50))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(50)
+    })]
 
     #[test]
     fn fuzz_update_all_types_with_status_transitions(
@@ -1372,7 +1378,10 @@ proptest! {
 // =============================================================================
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(50))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(50)
+    })]
 
     #[test]
     fn fuzz_schema_validation_all_types(
@@ -1405,7 +1414,10 @@ proptest! {
 // =============================================================================
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(50))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(50)
+    })]
 
     #[test]
     fn fuzz_status_validation_all_types(

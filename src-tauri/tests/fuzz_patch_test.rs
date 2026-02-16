@@ -112,7 +112,10 @@ fn assert_structured_error(err: &GargoyleError) {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     /// P1: create_entity with random metric fields never panics.
     /// P2: if Ok, entity is in DB with consistent fields.
@@ -172,7 +175,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_create_experiment_no_panic(
@@ -222,7 +228,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_create_result_no_panic(
@@ -273,7 +282,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_update_entity_no_panic(
@@ -362,7 +374,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_update_nonexistent_entity(
@@ -404,7 +419,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_create_relation_no_panic(
@@ -478,7 +496,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_create_claim_no_panic(
@@ -561,7 +582,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_mixed_patch_set(
@@ -637,7 +661,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_mixed_create_then_update_nonexistent(
@@ -697,7 +724,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_optimistic_lock_always_rejects_stale(
@@ -761,7 +791,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_claim_nonexistent_evidence_always_fails(
@@ -808,7 +841,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_validation_errors_have_field_path(
@@ -854,7 +890,10 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig {
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(500)
+    })]
 
     #[test]
     fn fuzz_lock_validation_errors_have_field_path(
