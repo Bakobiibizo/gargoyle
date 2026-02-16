@@ -1,0 +1,31 @@
+[package]
+name = "gargoyle"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled", "vtab"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+strsim = "0.11"
+proptest = "1"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[lib]
+name = "gargoyle_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "gargoyle"
+path = "src/main.rs"
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"

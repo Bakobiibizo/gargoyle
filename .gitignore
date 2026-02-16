@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+target/
+
+# Build output
+dist/
+src-tauri/target/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Rust
+**/*.rs.bk
+*.pdb
+
+# Tauri
+src-tauri/gen/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+*.profraw
