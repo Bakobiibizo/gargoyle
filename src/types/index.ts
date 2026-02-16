@@ -178,3 +178,222 @@ export interface SearchResult {
   entity_type: string;
   score: number;
 }
+
+// =============================================================================
+// Entity type constants and canonical field interfaces
+// =============================================================================
+
+// All known entity types
+export type EntityType =
+  | 'metric'
+  | 'experiment'
+  | 'result'
+  | 'task'
+  | 'project'
+  | 'decision'
+  | 'person'
+  | 'note'
+  | 'session'
+  | 'campaign'
+  | 'audience'
+  | 'competitor'
+  | 'channel'
+  | 'spec'
+  | 'budget'
+  | 'vendor'
+  | 'playbook'
+  | 'taxonomy'
+  | 'backlog'
+  | 'brief'
+  | 'event'
+  | 'policy';
+
+// Canonical field interfaces per entity type
+
+export interface MetricFields {
+  current_value?: number;
+  target_value?: number;
+  trend?: 'up' | 'down' | 'flat';
+  data_source?: string;
+}
+
+export interface ExperimentFields {
+  hypothesis?: string;
+  funnel_position?: string;
+  source_experiment_id?: string;
+}
+
+export interface ResultFields {
+  findings?: string;
+  methodology?: string;
+  confidence_level?: number;
+}
+
+export interface TaskFields {
+  assignee?: string;
+  effort_estimate?: string;
+  project_id?: string;
+  acceptance_criteria?: string;
+}
+
+export interface ProjectFields {
+  owner_id?: string;
+  objective?: string;
+  success_criteria?: string;
+  timeline?: string;
+}
+
+export interface DecisionFields {
+  owner_id: string;
+  decided_at?: string;
+  rationale: string;
+  revisit_triggers?: string;
+  options_considered?: string;
+}
+
+export interface PersonFields {
+  email?: string;
+  role?: string;
+  team?: string;
+  external?: boolean;
+}
+
+export interface NoteFields {
+  context?: string;
+  tags?: string;
+  linked_entity_id?: string;
+}
+
+export interface SessionFields {
+  session_type?: 'planning' | 'review' | 'standup' | 'workshop' | 'retro';
+  participants?: string;
+  agenda?: string;
+  outcomes?: string;
+}
+
+// Status types per entity type
+export type MetricStatus = 'active' | 'paused' | 'deprecated' | 'archived';
+export type ExperimentStatus = 'draft' | 'running' | 'concluded' | 'archived';
+export type ResultStatus = 'draft' | 'final' | 'archived';
+export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'blocked' | 'done' | 'archived';
+export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed' | 'archived';
+export type DecisionStatus = 'proposed' | 'accepted' | 'deprecated' | 'superseded';
+export type PersonStatus = 'active' | 'inactive' | 'archived';
+export type NoteStatus = 'draft' | 'final' | 'archived';
+export type SessionStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+
+// Wave 2 entity type field interfaces
+
+export interface CampaignFields {
+  objective?: string;
+  budget?: number;
+  channel?: 'email' | 'paid_social' | 'paid_search' | 'organic' | 'events' | 'partnerships';
+  start_date?: string;
+  end_date?: string;
+  target_audience_id?: string;
+}
+
+export interface AudienceFields {
+  segment_criteria?: string;
+  estimated_size?: number;
+  icp_id?: string;
+  channels?: string;
+}
+
+export interface CompetitorFields {
+  website?: string;
+  positioning?: string;
+  strengths?: string;
+  weaknesses?: string;
+  market_share?: string;
+}
+
+export interface ChannelFields {
+  channel_type?: 'email' | 'social' | 'search' | 'display' | 'events' | 'partnerships' | 'content' | 'referral';
+  cost_model?: string;
+  primary_metric_id?: string;
+  budget_allocation?: number;
+}
+
+export interface SpecFields {
+  spec_type?: 'technical' | 'product' | 'design' | 'process';
+  version?: string;
+  approval_status?: string;
+  author?: string;
+}
+
+export interface BudgetFields {
+  total_amount?: number;
+  currency?: string;
+  period?: string;
+  allocated?: number;
+  spent?: number;
+}
+
+export interface VendorFields {
+  vendor_type?: 'agency' | 'saas' | 'contractor' | 'platform';
+  contract_value?: number;
+  contract_end?: string;
+  primary_contact?: string;
+}
+
+export interface PlaybookFields {
+  playbook_type?: 'sales' | 'marketing' | 'ops' | 'cs' | 'dev';
+  trigger_conditions?: string;
+  expected_outcome?: string;
+  owner?: string;
+}
+
+// Wave 2 status types
+export type CampaignStatus = 'planning' | 'active' | 'paused' | 'completed' | 'archived';
+export type AudienceStatus = 'draft' | 'validated' | 'active' | 'archived';
+export type CompetitorStatus = 'tracking' | 'dormant' | 'archived';
+export type ChannelStatus = 'evaluating' | 'active' | 'scaling' | 'paused' | 'deprecated';
+export type SpecStatus = 'draft' | 'review' | 'approved' | 'deprecated';
+export type BudgetStatus = 'draft' | 'approved' | 'active' | 'closed';
+export type VendorStatus = 'evaluating' | 'active' | 'on_hold' | 'terminated';
+export type PlaybookStatus = 'draft' | 'active' | 'deprecated' | 'archived';
+
+// Wave 3 entity type field interfaces
+
+export interface TaxonomyFields {
+  taxonomy_type?: 'category' | 'tag' | 'hierarchy';
+  parent_id?: string;
+  level?: number;
+}
+
+export interface BacklogFields {
+  priority_score?: number;
+  effort?: string;
+  requester?: string;
+  target_sprint?: string;
+}
+
+export interface BriefFields {
+  brief_type?: 'creative' | 'campaign' | 'product' | 'event';
+  deadline?: string;
+  stakeholders?: string;
+  deliverables?: string;
+}
+
+export interface EventFields {
+  event_type?: 'conference' | 'webinar' | 'meetup' | 'workshop' | 'launch';
+  venue?: string;
+  start_date?: string;
+  end_date?: string;
+  expected_attendees?: number;
+}
+
+export interface PolicyFields {
+  policy_type?: 'security' | 'hr' | 'compliance' | 'operational';
+  effective_date?: string;
+  review_date?: string;
+  owner?: string;
+}
+
+// Wave 3 status types
+export type TaxonomyStatus = 'draft' | 'active' | 'archived';
+export type BacklogStatus = 'open' | 'triaged' | 'scheduled' | 'closed';
+export type BriefStatus = 'draft' | 'review' | 'approved' | 'archived';
+export type EventStatus = 'proposed' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+export type PolicyStatus = 'draft' | 'active' | 'under_review' | 'deprecated';

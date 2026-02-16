@@ -7,6 +7,25 @@ use crate::error::{ErrorCode, ValidationError};
 const METRIC_STATUSES: &[&str] = &["active", "paused", "deprecated", "archived"];
 const EXPERIMENT_STATUSES: &[&str] = &["draft", "running", "concluded", "archived"];
 const RESULT_STATUSES: &[&str] = &["draft", "final", "archived"];
+const TASK_STATUSES: &[&str] = &["backlog", "todo", "in_progress", "blocked", "done", "archived"];
+const PROJECT_STATUSES: &[&str] = &["planning", "active", "paused", "completed", "archived"];
+const DECISION_STATUSES: &[&str] = &["proposed", "accepted", "deprecated", "superseded"];
+const PERSON_STATUSES: &[&str] = &["active", "inactive", "archived"];
+const NOTE_STATUSES: &[&str] = &["draft", "final", "archived"];
+const SESSION_STATUSES: &[&str] = &["scheduled", "in_progress", "completed", "cancelled"];
+const CAMPAIGN_STATUSES: &[&str] = &["planning", "active", "paused", "completed", "archived"];
+const AUDIENCE_STATUSES: &[&str] = &["draft", "validated", "active", "archived"];
+const COMPETITOR_STATUSES: &[&str] = &["tracking", "dormant", "archived"];
+const CHANNEL_STATUSES: &[&str] = &["evaluating", "active", "scaling", "paused", "deprecated"];
+const SPEC_STATUSES: &[&str] = &["draft", "review", "approved", "deprecated"];
+const BUDGET_STATUSES: &[&str] = &["draft", "approved", "active", "closed"];
+const VENDOR_STATUSES: &[&str] = &["evaluating", "active", "on_hold", "terminated"];
+const PLAYBOOK_STATUSES: &[&str] = &["draft", "active", "deprecated", "archived"];
+const TAXONOMY_STATUSES: &[&str] = &["draft", "active", "archived"];
+const BACKLOG_STATUSES: &[&str] = &["open", "triaged", "scheduled", "closed"];
+const BRIEF_STATUSES: &[&str] = &["draft", "review", "approved", "archived"];
+const EVENT_STATUSES: &[&str] = &["proposed", "confirmed", "in_progress", "completed", "cancelled"];
+const POLICY_STATUSES: &[&str] = &["draft", "active", "under_review", "deprecated"];
 
 /// Get the valid status list for a given entity type.
 fn statuses_for_entity_type(entity_type: &str) -> Option<&'static [&'static str]> {
@@ -14,6 +33,25 @@ fn statuses_for_entity_type(entity_type: &str) -> Option<&'static [&'static str]
         "metric" => Some(METRIC_STATUSES),
         "experiment" => Some(EXPERIMENT_STATUSES),
         "result" => Some(RESULT_STATUSES),
+        "task" => Some(TASK_STATUSES),
+        "project" => Some(PROJECT_STATUSES),
+        "decision" => Some(DECISION_STATUSES),
+        "person" => Some(PERSON_STATUSES),
+        "note" => Some(NOTE_STATUSES),
+        "session" => Some(SESSION_STATUSES),
+        "campaign" => Some(CAMPAIGN_STATUSES),
+        "audience" => Some(AUDIENCE_STATUSES),
+        "competitor" => Some(COMPETITOR_STATUSES),
+        "channel" => Some(CHANNEL_STATUSES),
+        "spec" => Some(SPEC_STATUSES),
+        "budget" => Some(BUDGET_STATUSES),
+        "vendor" => Some(VENDOR_STATUSES),
+        "playbook" => Some(PLAYBOOK_STATUSES),
+        "taxonomy" => Some(TAXONOMY_STATUSES),
+        "backlog" => Some(BACKLOG_STATUSES),
+        "brief" => Some(BRIEF_STATUSES),
+        "event" => Some(EVENT_STATUSES),
+        "policy" => Some(POLICY_STATUSES),
         _ => None,
     }
 }
