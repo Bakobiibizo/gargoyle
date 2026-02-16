@@ -14,6 +14,8 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 strsim = "0.11"
 proptest = "1"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+dotenvy = "0.15"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

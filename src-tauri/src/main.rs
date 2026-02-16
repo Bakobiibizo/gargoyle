@@ -5,6 +5,9 @@ use gargoyle_lib::db;
 use std::sync::Mutex;
 
 fn main() {
+    // Load .env file (fail silently if not found — env vars may be set externally)
+    dotenvy::dotenv().ok();
+
     // Initialize the SQLite database
     let conn = db::connection::create_connection("./gargoyle.db")
         .expect("Failed to create database connection");
@@ -50,6 +53,9 @@ fn main() {
             gargoyle_lib::commands::claim_commands::list_claims,
             gargoyle_lib::commands::claim_commands::get_claim,
             gargoyle_lib::commands::claim_commands::promote_claim,
+            gargoyle_lib::commands::llm_commands::llm_chat,
+            gargoyle_lib::commands::llm_commands::llm_complete,
+            gargoyle_lib::commands::llm_commands::llm_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
