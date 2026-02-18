@@ -1,0 +1,32 @@
+version = 1
+statuses = ["pending", "decided", "revisited", "superseded"]
+
+[[fields]]
+name = "owner_id"
+type = "String"
+required = true
+description = "ID of the decision owner"
+
+[[fields]]
+name = "decided_at"
+type = "String"
+required = false
+description = "When the decision was made"
+
+[[fields]]
+name = "rationale"
+type = "String"
+required = true
+description = "Rationale behind the decision"
+
+[[fields]]
+name = "revisit_triggers"
+type = "String"
+required = false
+description = "Conditions that would trigger revisiting this decision"
+
+[[fields]]
+name = "options_considered"
+type = "String"
+required = false
+description = "Options that were considered"

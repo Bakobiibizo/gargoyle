@@ -56,8 +56,8 @@ fn test_5a_exact_title_match() {
     assert_eq!(exact.existing_entity_id, "m-orig");
     assert_eq!(exact.new_entity_id, "m-dup");
     assert!(
-        (exact.confidence - 1.0).abs() < f64::EPSILON,
-        "Exact title match should have confidence = 1.0"
+        (exact.confidence - 0.95).abs() < f64::EPSILON,
+        "Exact title match should have confidence = 0.95 per spec §3.3"
     );
     assert_eq!(exact.status, "pending");
 }
@@ -91,8 +91,8 @@ fn test_5b_case_insensitive_exact_match() {
     let exact = exact.unwrap();
     assert_eq!(exact.existing_entity_id, "m-upper");
     assert!(
-        (exact.confidence - 1.0).abs() < f64::EPSILON,
-        "Case-insensitive exact match should have confidence = 1.0"
+        (exact.confidence - 0.95).abs() < f64::EPSILON,
+        "Case-insensitive exact match should have confidence = 0.95 per spec §3.3"
     );
 }
 
@@ -126,8 +126,8 @@ fn test_5c_fuzzy_title_match_typo() {
 
     let fuzzy = fuzzy.unwrap();
     assert!(
-        fuzzy.confidence >= 0.8,
-        "Levenshtein similarity should be >= 0.8 for a single-char typo, got {}",
+        (fuzzy.confidence - 0.70).abs() < f64::EPSILON,
+        "Fuzzy title match should have confidence = 0.70 per spec §3.3, got {}",
         fuzzy.confidence
     );
     assert!(
@@ -223,8 +223,10 @@ fn test_5e_short_title_embedding_behavior() {
         "Short title 'MRR' should not exact/fuzzy match 'Monthly Recurring Revenue'"
     );
 
-    // The embedding stage runs (generates embedding for the short title too).
-    // Verify the embedding was created for the short-title entity.
+    // Per spec §3.3, embedding proximity only runs for title.length >= 4.
+    // Short acronym titles (MRR, ARR, LTV) produce embeddings too semantically
+    // adjacent to disambiguate reliably, so the dedup pipeline skips embedding
+    // generation for short titles entirely.
     let emb_count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM embeddings WHERE entity_id = 'm-mrr-short'",
@@ -233,8 +235,8 @@ fn test_5e_short_title_embedding_behavior() {
         )
         .unwrap();
     assert_eq!(
-        emb_count, 1,
-        "Embedding should be generated even for short titles"
+        emb_count, 0,
+        "Embedding should NOT be generated for short titles (len < 4) per spec §3.3"
     );
 }
 

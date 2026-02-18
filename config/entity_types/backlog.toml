@@ -1,0 +1,26 @@
+version = 1
+statuses = ["needs_triage", "triaged", "stale"]
+
+[[fields]]
+name = "priority_score"
+type = "Number"
+required = false
+description = "Priority score of the backlog item"
+
+[[fields]]
+name = "effort"
+type = "String"
+required = false
+description = "Estimated effort"
+
+[[fields]]
+name = "requester"
+type = "String"
+required = false
+description = "Person who requested this item"
+
+[[fields]]
+name = "target_sprint"
+type = "String"
+required = false
+description = "Target sprint for this item"

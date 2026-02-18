@@ -1,0 +1,26 @@
+version = 1
+statuses = ["open", "in_progress", "blocked", "done", "cancelled"]
+
+[[fields]]
+name = "assignee_id"
+type = "String"
+required = false
+description = "ID of the person assigned to this task"
+
+[[fields]]
+name = "effort_estimate"
+type = "String"
+required = false
+description = "Estimated effort for this task"
+
+[[fields]]
+name = "project_id"
+type = { EntityRef = "project" }
+required = false
+description = "Reference to the parent project"
+
+[[fields]]
+name = "acceptance_criteria"
+type = "String"
+required = false
+description = "Criteria for accepting this task as done"

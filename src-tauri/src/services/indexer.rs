@@ -2,10 +2,8 @@ use rusqlite::{params, Connection};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use crate::config::GargoyleConfig;
 use crate::error::{GargoyleError, Result};
-
-const EMBEDDING_DIMENSIONS: usize = 128;
-const EMBEDDING_MODEL: &str = "mock-hash-v1";
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SearchResult {
@@ -91,14 +89,14 @@ impl IndexerService {
 
     /// Generate a deterministic mock embedding for an entity and store it.
     ///
-    /// Reads the entity's title and canonical_fields, hashes them to produce
-    /// a 128-dimension f32 vector, then stores it in the embeddings table.
+    /// Reads the entity's title, body_md, and canonical_fields, hashes them to
+    /// produce a 128-dimension f32 vector, then stores it in the embeddings table.
     pub fn generate_embedding(conn: &Connection, entity_id: &str) -> Result<()> {
-        // Read entity title + canonical_fields
-        let (title, canonical_fields): (String, String) = conn.query_row(
-            "SELECT title, canonical_fields FROM entities WHERE id = ?1",
+        // Read entity title + body_md + canonical_fields
+        let (title, body_md, canonical_fields): (String, String, String) = conn.query_row(
+            "SELECT title, COALESCE(body_md, ''), canonical_fields FROM entities WHERE id = ?1",
             params![entity_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
                 entity_type: "entity".to_string(),
@@ -107,8 +105,9 @@ impl IndexerService {
             other => GargoyleError::Database(other),
         })?;
 
-        let text = format!("{} {}", title, canonical_fields);
-        let vector = generate_mock_vector(&text);
+        let config = &GargoyleConfig::global().indexer;
+        let text = format!("{} {} {}", title, body_md, canonical_fields);
+        let vector = generate_mock_vector(&text, config.embedding_dimensions);
         let blob = vector_to_blob(&vector);
 
         // Delete old embedding first if exists
@@ -126,9 +125,9 @@ impl IndexerService {
             params![
                 embedding_id,
                 entity_id,
-                EMBEDDING_MODEL,
+                &config.embedding_model,
                 blob,
-                EMBEDDING_DIMENSIONS as i32,
+                config.embedding_dimensions as i32,
                 now,
             ],
         )?;
@@ -147,7 +146,8 @@ impl IndexerService {
         limit: usize,
         threshold: Option<f64>,
     ) -> Result<Vec<SearchResult>> {
-        let query_vector = generate_mock_vector(query);
+        let config = &GargoyleConfig::global().indexer;
+        let query_vector = generate_mock_vector(query, config.embedding_dimensions);
 
         // Load all embeddings with their entity info
         let mut stmt = conn.prepare(
@@ -227,13 +227,13 @@ impl IndexerService {
     }
 }
 
-/// Generate a deterministic 128-dimension mock vector from text.
+/// Generate a deterministic mock vector from text with the given dimensions.
 ///
 /// For each dimension i, hashes the concatenation of text + i,
 /// then maps the hash to f32 in [-1.0, 1.0].
-fn generate_mock_vector(text: &str) -> Vec<f32> {
-    let mut vector = Vec::with_capacity(EMBEDDING_DIMENSIONS);
-    for i in 0..EMBEDDING_DIMENSIONS {
+fn generate_mock_vector(text: &str, dimensions: usize) -> Vec<f32> {
+    let mut vector = Vec::with_capacity(dimensions);
+    for i in 0..dimensions {
         let mut hasher = DefaultHasher::new();
         format!("{}{}", text, i).hash(&mut hasher);
         let h = hasher.finish();
@@ -499,13 +499,13 @@ mod tests {
         IndexerService::generate_embedding(&conn, "sim-002").unwrap();
         IndexerService::generate_embedding(&conn, "sim-003").unwrap();
 
-        // Search for something similar to "Revenue Growth Rate {}"
+        // Search for something similar to "Revenue Growth Rate Monthly revenue {}"
         // The query text goes through the same hash, so an exact match should be most similar
-        let results = IndexerService::search_similar(&conn, "Revenue Growth Rate {}", 10, None).unwrap();
+        let results = IndexerService::search_similar(&conn, "Revenue Growth Rate Monthly revenue {}", 10, None).unwrap();
         assert!(!results.is_empty(), "Should return at least one result");
 
         // The top result should be the entity whose text hashes most similarly
-        // Since "Revenue Growth Rate {}" is exactly "Revenue Growth Rate" + " " + "{}",
+        // Since the query matches the embedding text "Revenue Growth Rate Monthly revenue {}",
         // sim-001 should be the top match
         assert_eq!(results[0].entity_id, "sim-001");
         assert!(results[0].score > results.last().unwrap().score || results.len() == 1);
@@ -518,9 +518,9 @@ mod tests {
         IndexerService::generate_embedding(&conn, "self-001").unwrap();
 
         // Query with the exact same text that was used to generate the embedding
-        // The embedding text is "title canonical_fields" = "Exact Match Test {}"
+        // The embedding text is "title body_md canonical_fields" = "Exact Match Test body text {}"
         let results =
-            IndexerService::search_similar(&conn, "Exact Match Test {}", 10, None).unwrap();
+            IndexerService::search_similar(&conn, "Exact Match Test body text {}", 10, None).unwrap();
         assert_eq!(results.len(), 1);
         let score = results[0].score;
         assert!(
@@ -542,8 +542,8 @@ mod tests {
         IndexerService::generate_embedding(&conn, "thr-003").unwrap();
 
         // With a very high threshold, we should get fewer results
-        let high = IndexerService::search_similar(&conn, "AAA {}", 10, Some(0.99)).unwrap();
-        let low = IndexerService::search_similar(&conn, "AAA {}", 10, Some(-1.0)).unwrap();
+        let high = IndexerService::search_similar(&conn, "AAA aaa {}", 10, Some(0.99)).unwrap();
+        let low = IndexerService::search_similar(&conn, "AAA aaa {}", 10, Some(-1.0)).unwrap();
 
         assert!(
             high.len() <= low.len(),
@@ -561,7 +561,7 @@ mod tests {
             IndexerService::generate_embedding(&conn, &id).unwrap();
         }
 
-        let results = IndexerService::search_similar(&conn, "Item 0 {}", 2, None).unwrap();
+        let results = IndexerService::search_similar(&conn, "Item 0 body {}", 2, None).unwrap();
         assert_eq!(results.len(), 2, "Should respect the limit parameter");
     }
 
@@ -579,7 +579,7 @@ mod tests {
         .unwrap();
 
         let results =
-            IndexerService::search_similar(&conn, "Deleted Entity {}", 10, None).unwrap();
+            IndexerService::search_similar(&conn, "Deleted Entity body {}", 10, None).unwrap();
         assert!(
             results.is_empty(),
             "Deleted entities should not appear in similarity search"
@@ -627,11 +627,11 @@ mod tests {
 
     #[test]
     fn test_mock_vector_determinism() {
-        let v1 = generate_mock_vector("hello world");
-        let v2 = generate_mock_vector("hello world");
+        let v1 = generate_mock_vector("hello world", 128);
+        let v2 = generate_mock_vector("hello world", 128);
         assert_eq!(v1, v2, "Same input should always produce the same vector");
 
-        let v3 = generate_mock_vector("different text");
+        let v3 = generate_mock_vector("different text", 128);
         assert_ne!(v1, v3, "Different input should produce different vectors");
     }
 

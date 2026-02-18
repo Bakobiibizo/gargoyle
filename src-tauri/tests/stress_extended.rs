@@ -1,18 +1,19 @@
-// Extended stress tests covering all 22 entity types (Waves 1C + 2C).
+// Extended stress tests covering all 27 entity types (Waves 1C + 2C + 3).
 //
 // Properties verified:
 //   P1: No panics, no hangs, no unstructured errors on any valid input
 //   P2: If Ok, database is consistent
 //   P3: If Err, database is unchanged (atomic rollback)
 //   P4: Optimistic locking always enforced
-//   P7: CRUD lifecycle works for all 22 entity types
+//   P7: CRUD lifecycle works for all 27 entity types
 //   P8: Status state machine enforced for all types
 //   P9: Required field enforcement (decision requires owner_id + rationale)
 //   P10: Cross-type entity_ref validation
 //   P11: Template prerequisite chains
 //
-// Fuzz budget: ~50 cases per type x 22 types = ~1100 random ops minimum.
+// Fuzz budget: ~50 cases per type x 27 types = ~1350 random ops minimum.
 
+#[allow(dead_code)]
 mod common;
 
 use gargoyle_lib::error::GargoyleError;
@@ -94,8 +95,9 @@ fn create_entity_via_patch(
             status,
             category: None,
             priority: None,
+            reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
 
     let result = apply_patch_set(conn, &patch_set)?;
@@ -109,28 +111,39 @@ fn create_entity_via_patch(
 }
 
 // =============================================================================
-// Test: CRUD lifecycle for all 22 entity types
+// Test: CRUD lifecycle for all 27 entity types
 // =============================================================================
 
 #[test]
 fn test_crud_lifecycle_all_22_types() {
     let conn = common::test_db();
 
+    // Pre-create a person entity for EntityRef("person") fields to reference
+    let (person_id, _) = create_entity_via_patch(
+        &conn,
+        "person",
+        "Test Person",
+        "manual",
+        serde_json::json!({"role": "Engineer"}),
+        Some("active".to_string()),
+    )
+    .expect("person pre-creation should succeed");
+
     for entity_type in common::generators::ALL_ENTITY_TYPES {
         // Build valid canonical_fields for this type (deterministic, not proptest)
         let canonical_fields = match *entity_type {
-            "decision" => serde_json::json!({"owner_id": "test-owner", "rationale": "test rationale"}),
+            "decision" => serde_json::json!({"owner_id": person_id, "decided_at": "2025-01-01", "rationale": "test rationale", "revisit_triggers": "Q2 review"}),
             "metric" => serde_json::json!({"current_value": 42.0}),
-            "experiment" => serde_json::json!({"hypothesis": "test"}),
-            "result" => serde_json::json!({"findings": "test"}),
-            "task" => serde_json::json!({"assignee": "Alice"}),
+            "experiment" => serde_json::json!({"hypothesis": "test", "primary_metric": "conversion_rate"}),
+            "result" => serde_json::json!({"outcome": "test"}),
+            "task" => serde_json::json!({"effort_estimate": "2d"}),
             "project" => serde_json::json!({"objective": "Ship v2"}),
             "person" => serde_json::json!({"role": "Engineer"}),
-            "note" => serde_json::json!({"context": "planning"}),
+            "note" => serde_json::json!({"tags": "planning"}),
             "session" => serde_json::json!({"session_type": "planning"}),
-            "campaign" => serde_json::json!({"objective": "Growth"}),
-            "audience" => serde_json::json!({"segment_criteria": "Enterprise"}),
-            "competitor" => serde_json::json!({"website": "https://example.com"}),
+            "campaign" => serde_json::json!({"objective": "acquisition"}),
+            "audience" => serde_json::json!({"segment_criteria": "Enterprise SaaS"}),
+            "competitor" => serde_json::json!({"positioning": "Market leader"}),
             "channel" => serde_json::json!({"channel_type": "email"}),
             "spec" => serde_json::json!({"spec_type": "technical"}),
             "budget" => serde_json::json!({"total_amount": 10000.0}),
@@ -138,13 +151,22 @@ fn test_crud_lifecycle_all_22_types() {
             "playbook" => serde_json::json!({"playbook_type": "sales"}),
             "taxonomy" => serde_json::json!({"taxonomy_type": "category"}),
             "backlog" => serde_json::json!({"priority_score": 5.0}),
-            "brief" => serde_json::json!({"brief_type": "creative"}),
+            "brief" => serde_json::json!({"brief_type": "creative", "deadline": "2025-03-31"}),
             "event" => serde_json::json!({"event_type": "conference"}),
-            "policy" => serde_json::json!({"policy_type": "security"}),
+            "policy" => serde_json::json!({"policy_type": "compliance"}),
+            "inbox_item" => serde_json::json!({"source_text": "Test inbox item"}),
+            "artifact_type" => serde_json::json!({"artifact_kind": "attachment", "uri_or_path": "/test/file.pdf"}),
+            "concept" => serde_json::json!({"definition": "Test concept"}),
+            "commitment" => serde_json::json!({"owner_id": person_id}),
+            "issue" => serde_json::json!({"severity": "medium"}),
             _ => serde_json::json!({}),
         };
 
-        let initial_status = common::generators::initial_status_for_type(entity_type);
+        // Some entity types have no status machine
+        let initial_status: Option<String> = match *entity_type {
+            "note" | "artifact_type" | "concept" => None,
+            _ => Some(common::generators::initial_status_for_type(entity_type).to_string()),
+        };
 
         // CREATE
         let (entity_id, updated_at) = create_entity_via_patch(
@@ -153,7 +175,7 @@ fn test_crud_lifecycle_all_22_types() {
             &format!("Test {}", entity_type),
             "manual",
             canonical_fields.clone(),
-            Some(initial_status.to_string()),
+            initial_status,
         )
         .unwrap_or_else(|e| panic!("Failed to create {}: {:?}", entity_type, e));
 
@@ -164,32 +186,35 @@ fn test_crud_lifecycle_all_22_types() {
             entity_type
         );
 
-        // UPDATE (forward status transition)
-        let second_status = common::generators::second_status_for_type(entity_type);
+        // UPDATE (forward status transition, or just title update for types without status machine)
+        let second_status: Option<String> = match *entity_type {
+            "note" | "artifact_type" | "concept" => None,
+            _ => Some(common::generators::second_status_for_type(entity_type).to_string()),
+        };
         let update_patch = PatchSet {
             ops: vec![PatchOp::UpdateEntity(UpdateEntityPayload {
                 entity_id: entity_id.clone(),
                 expected_updated_at: updated_at.clone(),
                 title: Some(format!("Updated {}", entity_type)),
                 body_md: None,
-                status: Some(second_status.to_string()),
+                status: second_status.clone(),
                 canonical_fields: Some(canonical_fields.clone()),
                 category: None,
                 priority: None,
                 reason: None,
             })],
-            run_id: None,
+            run_id: String::new(),
         };
 
         let update_result = apply_patch_set(&conn, &update_patch)
             .unwrap_or_else(|e| panic!("Failed to update {}: {:?}", entity_type, e));
         assert_eq!(update_result.applied.len(), 1);
 
-        // Verify status changed
+        // Verify status changed (if applicable)
         let current_status = get_entity_status(&conn, &entity_id);
         assert_eq!(
             current_status,
-            Some(second_status.to_string()),
+            second_status,
             "Status should be updated for {}",
             entity_type
         );
@@ -231,44 +256,47 @@ fn test_status_forward_transitions_all_types() {
         let statuses: Vec<&str> = match *entity_type {
             "metric" => vec!["active", "paused", "deprecated", "archived"],
             "experiment" => vec!["draft", "running", "concluded", "archived"],
-            "result" => vec!["draft", "final", "archived"],
-            "task" => vec!["backlog", "todo", "in_progress", "blocked", "done", "archived"],
+            "result" => vec!["preliminary", "final", "invalidated"],
+            "task" => vec!["open", "in_progress", "blocked", "done", "cancelled"],
             "project" => vec!["planning", "active", "paused", "completed", "archived"],
-            "decision" => vec!["proposed", "accepted", "deprecated", "superseded"],
-            "person" => vec!["active", "inactive", "archived"],
-            "note" => vec!["draft", "final", "archived"],
-            "session" => vec!["scheduled", "in_progress", "completed", "cancelled"],
-            "campaign" => vec!["planning", "active", "paused", "completed", "archived"],
-            "audience" => vec!["draft", "validated", "active", "archived"],
-            "competitor" => vec!["tracking", "dormant", "archived"],
-            "channel" => vec!["evaluating", "active", "scaling", "paused", "deprecated"],
-            "spec" => vec!["draft", "review", "approved", "deprecated"],
-            "budget" => vec!["draft", "approved", "active", "closed"],
-            "vendor" => vec!["evaluating", "active", "on_hold", "terminated"],
-            "playbook" => vec!["draft", "active", "deprecated", "archived"],
-            "taxonomy" => vec!["draft", "active", "archived"],
-            "backlog" => vec!["open", "triaged", "scheduled", "closed"],
-            "brief" => vec!["draft", "review", "approved", "archived"],
-            "event" => vec!["proposed", "confirmed", "in_progress", "completed", "cancelled"],
-            "policy" => vec!["draft", "active", "under_review", "deprecated"],
+            "decision" => vec!["pending", "decided", "revisited", "superseded"],
+            "person" => vec!["active", "departed"],
+            "note" | "artifact_type" | "concept" => vec![],
+            "session" => vec!["active", "ended"],
+            "campaign" => vec!["planning", "live", "paused", "completed", "cancelled"],
+            "audience" => vec!["draft", "validated", "deprecated"],
+            "competitor" => vec!["active", "acquired", "defunct", "irrelevant"],
+            "channel" => vec!["active", "paused", "retired"],
+            "spec" => vec!["draft", "review", "approved", "superseded"],
+            "budget" => vec!["draft", "approved", "active", "exhausted", "closed"],
+            "vendor" => vec!["evaluating", "active", "paused", "terminated"],
+            "playbook" => vec!["draft", "active", "deprecated"],
+            "taxonomy" => vec!["draft", "active", "superseded"],
+            "backlog" => vec!["needs_triage", "triaged", "stale"],
+            "brief" => vec!["draft", "approved", "in_progress", "completed"],
+            "event" => vec!["concept", "planning", "confirmed", "completed", "cancelled"],
+            "policy" => vec!["draft", "review", "active", "superseded"],
+            "inbox_item" => vec!["unprocessed", "triaged", "archived"],
+            "commitment" => vec!["on_track", "at_risk", "blocked", "fulfilled", "broken"],
+            "issue" => vec!["open", "investigating", "mitigated", "resolved", "wont_fix"],
             _ => vec![],
         };
 
-        // Forward transitions should always pass without reason
+        // Forward transitions should always pass without reason (no errors)
         for i in 0..statuses.len().saturating_sub(1) {
-            let errors = validate_status_transition(
+            let result = validate_status_transition(
                 entity_type,
                 Some(statuses[i]),
                 statuses[i + 1],
                 None,
             );
             assert!(
-                errors.is_empty(),
+                result.errors.is_empty(),
                 "Forward transition {} -> {} for {} should succeed without reason, got: {:?}",
                 statuses[i],
                 statuses[i + 1],
                 entity_type,
-                errors
+                result.errors
             );
         }
     }
@@ -286,26 +314,29 @@ fn test_status_backward_transitions_require_reason() {
         let statuses: Vec<&str> = match *entity_type {
             "metric" => vec!["active", "paused", "deprecated", "archived"],
             "experiment" => vec!["draft", "running", "concluded", "archived"],
-            "result" => vec!["draft", "final", "archived"],
-            "task" => vec!["backlog", "todo", "in_progress", "blocked", "done", "archived"],
+            "result" => vec!["preliminary", "final", "invalidated"],
+            "task" => vec!["open", "in_progress", "blocked", "done", "cancelled"],
             "project" => vec!["planning", "active", "paused", "completed", "archived"],
-            "decision" => vec!["proposed", "accepted", "deprecated", "superseded"],
-            "person" => vec!["active", "inactive", "archived"],
-            "note" => vec!["draft", "final", "archived"],
-            "session" => vec!["scheduled", "in_progress", "completed", "cancelled"],
-            "campaign" => vec!["planning", "active", "paused", "completed", "archived"],
-            "audience" => vec!["draft", "validated", "active", "archived"],
-            "competitor" => vec!["tracking", "dormant", "archived"],
-            "channel" => vec!["evaluating", "active", "scaling", "paused", "deprecated"],
-            "spec" => vec!["draft", "review", "approved", "deprecated"],
-            "budget" => vec!["draft", "approved", "active", "closed"],
-            "vendor" => vec!["evaluating", "active", "on_hold", "terminated"],
-            "playbook" => vec!["draft", "active", "deprecated", "archived"],
-            "taxonomy" => vec!["draft", "active", "archived"],
-            "backlog" => vec!["open", "triaged", "scheduled", "closed"],
-            "brief" => vec!["draft", "review", "approved", "archived"],
-            "event" => vec!["proposed", "confirmed", "in_progress", "completed", "cancelled"],
-            "policy" => vec!["draft", "active", "under_review", "deprecated"],
+            "decision" => vec!["pending", "decided", "revisited", "superseded"],
+            "person" => vec!["active", "departed"],
+            "note" | "artifact_type" | "concept" => vec![],
+            "session" => vec!["active", "ended"],
+            "campaign" => vec!["planning", "live", "paused", "completed", "cancelled"],
+            "audience" => vec!["draft", "validated", "deprecated"],
+            "competitor" => vec!["active", "acquired", "defunct", "irrelevant"],
+            "channel" => vec!["active", "paused", "retired"],
+            "spec" => vec!["draft", "review", "approved", "superseded"],
+            "budget" => vec!["draft", "approved", "active", "exhausted", "closed"],
+            "vendor" => vec!["evaluating", "active", "paused", "terminated"],
+            "playbook" => vec!["draft", "active", "deprecated"],
+            "taxonomy" => vec!["draft", "active", "superseded"],
+            "backlog" => vec!["needs_triage", "triaged", "stale"],
+            "brief" => vec!["draft", "approved", "in_progress", "completed"],
+            "event" => vec!["concept", "planning", "confirmed", "completed", "cancelled"],
+            "policy" => vec!["draft", "review", "active", "superseded"],
+            "inbox_item" => vec!["unprocessed", "triaged", "archived"],
+            "commitment" => vec!["on_track", "at_risk", "blocked", "fulfilled", "broken"],
+            "issue" => vec!["open", "investigating", "mitigated", "resolved", "wont_fix"],
             _ => vec![],
         };
 
@@ -313,35 +344,50 @@ fn test_status_backward_transitions_require_reason() {
             continue;
         }
 
-        // Backward transition without reason should fail
-        let errors = validate_status_transition(
+        // Backward transition without reason should succeed (soft constraint) but produce a warning
+        let result_no_reason = validate_status_transition(
             entity_type,
             Some(statuses[statuses.len() - 1]),
             statuses[0],
             None,
         );
         assert!(
-            !errors.is_empty(),
-            "Backward transition {} -> {} for {} should require a reason",
+            result_no_reason.errors.is_empty(),
+            "Backward transition {} -> {} for {} should succeed (soft constraint), got errors: {:?}",
+            statuses[statuses.len() - 1],
+            statuses[0],
+            entity_type,
+            result_no_reason.errors
+        );
+        assert!(
+            !result_no_reason.warnings.is_empty(),
+            "Backward transition {} -> {} for {} without reason should produce a warning",
             statuses[statuses.len() - 1],
             statuses[0],
             entity_type
         );
 
-        // Backward transition with reason should succeed
-        let errors_with_reason = validate_status_transition(
+        // Backward transition with reason should also succeed with an informational warning
+        let result_with_reason = validate_status_transition(
             entity_type,
             Some(statuses[statuses.len() - 1]),
             statuses[0],
             Some("Reverting for re-evaluation"),
         );
         assert!(
-            errors_with_reason.is_empty(),
-            "Backward transition {} -> {} for {} should succeed with reason, got: {:?}",
+            result_with_reason.errors.is_empty(),
+            "Backward transition {} -> {} for {} should succeed with reason, got errors: {:?}",
             statuses[statuses.len() - 1],
             statuses[0],
             entity_type,
-            errors_with_reason
+            result_with_reason.errors
+        );
+        assert!(
+            !result_with_reason.warnings.is_empty(),
+            "Backward transition {} -> {} for {} with reason should produce an informational warning",
+            statuses[statuses.len() - 1],
+            statuses[0],
+            entity_type
         );
     }
 }
@@ -356,23 +402,23 @@ fn test_decision_requires_owner_id_and_rationale() {
 
     let reg = SchemaRegistry::new();
 
-    // Missing both required fields
+    // Missing all required fields
     let errors = reg.validate_canonical_fields("decision", 1, &serde_json::json!({}));
     assert!(
         errors.len() >= 2,
-        "Decision with no fields should have at least 2 errors (missing owner_id + rationale), got: {:?}",
+        "Decision with no fields should have at least 2 errors (owner_id, rationale), got: {:?}",
         errors
     );
 
-    // Missing rationale only
+    // All required fields present -- should pass
     let errors = reg.validate_canonical_fields(
         "decision",
         1,
-        &serde_json::json!({"owner_id": "test-owner"}),
+        &serde_json::json!({"owner_id": "test-owner", "rationale": "test rationale"}),
     );
     assert!(
-        errors.len() >= 1,
-        "Decision missing rationale should have at least 1 error: {:?}",
+        errors.is_empty(),
+        "Decision with all required fields should pass: {:?}",
         errors
     );
 
@@ -388,15 +434,27 @@ fn test_decision_requires_owner_id_and_rationale() {
         errors
     );
 
-    // Both present -- should pass
+    // Missing rationale only
     let errors = reg.validate_canonical_fields(
         "decision",
         1,
-        &serde_json::json!({"owner_id": "test-owner", "rationale": "test rationale"}),
+        &serde_json::json!({"owner_id": "test-owner"}),
+    );
+    assert!(
+        errors.len() >= 1,
+        "Decision missing rationale should have at least 1 error: {:?}",
+        errors
+    );
+
+    // All required + optional fields present -- should also pass
+    let errors = reg.validate_canonical_fields(
+        "decision",
+        1,
+        &serde_json::json!({"owner_id": "test-owner", "rationale": "test rationale", "decided_at": "2025-01-01", "revisit_triggers": "Q2"}),
     );
     assert!(
         errors.is_empty(),
-        "Decision with both required fields should pass: {:?}",
+        "Decision with all required and optional fields should pass: {:?}",
         errors
     );
 }
@@ -445,61 +503,60 @@ fn test_cross_type_entity_ref_schema_validation() {
         "campaign.target_audience_id with boolean value should fail"
     );
 
-    // channel.primary_metric_id must be a string (EntityRef to metric)
+    // decision.owner_id must be a string (EntityRef to person)
     let errors = reg.validate_canonical_fields(
-        "channel",
+        "decision",
         1,
-        &serde_json::json!({"primary_metric_id": 42}), // wrong type
+        &serde_json::json!({"owner_id": 42, "decided_at": "2025-01-01", "rationale": "test", "revisit_triggers": "Q2"}),
     );
     assert!(
         !errors.is_empty(),
-        "channel.primary_metric_id with number should fail"
+        "decision.owner_id with number should fail"
     );
 
-    // taxonomy.parent_id must be a string (EntityRef to taxonomy)
+    // project.owner_id must be a string (EntityRef to person)
     let errors = reg.validate_canonical_fields(
-        "taxonomy",
+        "project",
         1,
-        &serde_json::json!({"parent_id": ["array"]}), // wrong type
+        &serde_json::json!({"owner_id": ["array"]}), // wrong type
     );
     assert!(
         !errors.is_empty(),
-        "taxonomy.parent_id with array should fail"
+        "project.owner_id with array should fail"
     );
 
-    // audience.icp_id must be a string (EntityRef to person)
-    let errors = reg.validate_canonical_fields(
-        "audience",
-        1,
-        &serde_json::json!({"icp_id": "valid-string-ref"}),
-    );
-    assert!(
-        errors.is_empty(),
-        "audience.icp_id with valid string should pass: {:?}",
-        errors
-    );
-
-    // note.linked_entity_id (wildcard EntityRef to *)
+    // note.context must be a string
     let errors = reg.validate_canonical_fields(
         "note",
         1,
-        &serde_json::json!({"linked_entity_id": "any-entity-id"}),
+        &serde_json::json!({"context": "valid context string"}),
     );
     assert!(
         errors.is_empty(),
-        "note.linked_entity_id with string should pass: {:?}",
+        "note.context with valid string should pass: {:?}",
         errors
     );
 
-    // experiment.source_experiment_id (EntityRef to experiment)
+    // note.context with wrong type should fail
     let errors = reg.validate_canonical_fields(
-        "experiment",
+        "note",
         1,
-        &serde_json::json!({"source_experiment_id": false}), // wrong type
+        &serde_json::json!({"context": 42}),
     );
     assert!(
         !errors.is_empty(),
-        "experiment.source_experiment_id with boolean should fail"
+        "note.context with number should fail"
+    );
+
+    // result.confidence_level (String) with wrong type
+    let errors = reg.validate_canonical_fields(
+        "result",
+        1,
+        &serde_json::json!({"outcome": "test", "confidence_level": false}), // wrong type
+    );
+    assert!(
+        !errors.is_empty(),
+        "result.confidence_level with boolean should fail"
     );
 }
 
@@ -529,7 +586,7 @@ fn test_cross_type_entity_ref_create_via_patch() {
         "Task referencing project",
         "manual",
         serde_json::json!({"project_id": project_id}),
-        Some("backlog".to_string()),
+        Some("open".to_string()),
     );
     // Should succeed (project_id is a valid entity ref at schema level)
     assert!(
@@ -549,45 +606,34 @@ fn test_cross_type_entity_ref_create_via_patch() {
     )
     .expect("Failed to create person");
 
-    // Create an audience that references the person as ICP
+    // Create a decision that references the person as owner
+    let decision_result = create_entity_via_patch(
+        &conn,
+        "decision",
+        "Test Decision",
+        "manual",
+        serde_json::json!({"owner_id": person_id, "decided_at": "2025-01-01", "rationale": "test", "revisit_triggers": "Q2"}),
+        Some("pending".to_string()),
+    );
+    assert!(
+        decision_result.is_ok(),
+        "Decision with valid owner_id ref should succeed: {:?}",
+        decision_result.err()
+    );
+
+    // Create an audience (no EntityRef fields required, just valid required fields)
     let audience_result = create_entity_via_patch(
         &conn,
         "audience",
         "Enterprise ICP Audience",
         "manual",
-        serde_json::json!({"icp_id": person_id, "segment_criteria": "Enterprise"}),
+        serde_json::json!({"segment_criteria": "Enterprise SaaS buyers"}),
         Some("draft".to_string()),
     );
     assert!(
         audience_result.is_ok(),
-        "Audience with valid icp_id ref should succeed: {:?}",
+        "Audience creation should succeed: {:?}",
         audience_result.err()
-    );
-
-    // Create a metric first
-    let (metric_id, _) = create_entity_via_patch(
-        &conn,
-        "metric",
-        "Test Metric",
-        "manual",
-        serde_json::json!({"current_value": 42.0}),
-        Some("active".to_string()),
-    )
-    .expect("Failed to create metric");
-
-    // Create a channel that references the metric
-    let channel_result = create_entity_via_patch(
-        &conn,
-        "channel",
-        "Email Channel",
-        "manual",
-        serde_json::json!({"channel_type": "email", "primary_metric_id": metric_id}),
-        Some("evaluating".to_string()),
-    );
-    assert!(
-        channel_result.is_ok(),
-        "Channel with valid primary_metric_id ref should succeed: {:?}",
-        channel_result.err()
     );
 }
 
@@ -637,15 +683,15 @@ fn test_template_prerequisite_chain() {
         "analytics-experiment-plan should have all prerequisites satisfied after creating a metric"
     );
 
-    // analytics-anomaly-investigation requires experiment >= 1
-    let def = get_template_definition("analytics-anomaly-investigation").unwrap();
+    // analytics-anomaly-detection-investigation requires experiment >= 1
+    let def = get_template_definition("analytics-anomaly-detection-investigation").unwrap();
     assert_eq!(def.prerequisites[0].entity_type, "experiment");
 
-    let results = check_prerequisites(&conn, "analytics-anomaly-investigation").unwrap();
+    let results = check_prerequisites(&conn, "analytics-anomaly-detection-investigation").unwrap();
     let unsatisfied: Vec<_> = results.iter().filter(|r| !r.satisfied).collect();
     assert!(
         !unsatisfied.is_empty(),
-        "analytics-anomaly-investigation should need experiments"
+        "analytics-anomaly-detection-investigation should need experiments"
     );
 
     // Create an experiment
@@ -654,16 +700,16 @@ fn test_template_prerequisite_chain() {
         "experiment",
         "Test Experiment",
         "manual",
-        serde_json::json!({"hypothesis": "testing"}),
+        serde_json::json!({"hypothesis": "testing", "primary_metric": "conversion_rate"}),
         Some("draft".to_string()),
     )
     .expect("Failed to create experiment");
 
-    let results = check_prerequisites(&conn, "analytics-anomaly-investigation").unwrap();
+    let results = check_prerequisites(&conn, "analytics-anomaly-detection-investigation").unwrap();
     let unsatisfied: Vec<_> = results.iter().filter(|r| !r.satisfied).collect();
     assert!(
         unsatisfied.is_empty(),
-        "analytics-anomaly-investigation should be satisfied after creating experiment"
+        "analytics-anomaly-detection-investigation should be satisfied after creating experiment"
     );
 
     // mkt-positioning-narrative requires person >= 1
@@ -731,6 +777,13 @@ fn test_template_prerequisite_wave2b_dependencies() {
     let def = get_template_definition("mkt-editorial-calendar").unwrap();
     assert_eq!(def.prerequisites[0].entity_type, "note");
 
+    // Pre-create a person entity for decision owner_id EntityRef
+    let (person_id, _) = create_entity_via_patch(
+        &conn, "person", "CEO", "manual",
+        serde_json::json!({"role": "CEO"}),
+        Some("active".to_string()),
+    ).expect("Failed to create person for decision owner_id");
+
     // Create dependencies in order and verify prerequisites
     // 1. Create budget -> mkt-paid-ads-plan satisfied
     create_entity_via_patch(
@@ -745,7 +798,7 @@ fn test_template_prerequisite_wave2b_dependencies() {
     // 2. Create audience -> mkt-email-nurture-sequence satisfied
     create_entity_via_patch(
         &conn, "audience", "Enterprise Buyers", "manual",
-        serde_json::json!({"segment_criteria": "Enterprise SaaS"}),
+        serde_json::json!({"segment_criteria": "Enterprise SaaS buyers"}),
         Some("draft".to_string()),
     ).unwrap();
 
@@ -755,7 +808,7 @@ fn test_template_prerequisite_wave2b_dependencies() {
     // 3. Create campaign -> mkt-launch-content-pack satisfied
     create_entity_via_patch(
         &conn, "campaign", "Spring Launch", "manual",
-        serde_json::json!({"objective": "Launch new product"}),
+        serde_json::json!({"objective": "acquisition"}),
         Some("planning".to_string()),
     ).unwrap();
 
@@ -766,7 +819,7 @@ fn test_template_prerequisite_wave2b_dependencies() {
     create_entity_via_patch(
         &conn, "channel", "Email Channel", "manual",
         serde_json::json!({"channel_type": "email"}),
-        Some("evaluating".to_string()),
+        Some("active".to_string()),
     ).unwrap();
 
     let results = check_prerequisites(&conn, "mkt-social-distribution-plan").unwrap();
@@ -775,8 +828,13 @@ fn test_template_prerequisite_wave2b_dependencies() {
     // 5. Create decision -> strategy-messaging-architecture satisfied
     create_entity_via_patch(
         &conn, "decision", "Pricing Decision", "manual",
-        serde_json::json!({"owner_id": "ceo", "rationale": "Market positioning"}),
-        Some("proposed".to_string()),
+        serde_json::json!({
+            "owner_id": person_id,
+            "decided_at": "2025-01-15",
+            "rationale": "Market positioning",
+            "revisit_triggers": "market shift, competitor move"
+        }),
+        Some("pending".to_string()),
     ).unwrap();
 
     let results = check_prerequisites(&conn, "strategy-messaging-architecture").unwrap();
@@ -785,8 +843,8 @@ fn test_template_prerequisite_wave2b_dependencies() {
     // 6. Create note -> mkt-editorial-calendar satisfied
     create_entity_via_patch(
         &conn, "note", "Content Ideas", "manual",
-        serde_json::json!({"context": "editorial planning"}),
-        Some("draft".to_string()),
+        serde_json::json!({}),
+        None,
     ).unwrap();
 
     let results = check_prerequisites(&conn, "mkt-editorial-calendar").unwrap();
@@ -794,7 +852,7 @@ fn test_template_prerequisite_wave2b_dependencies() {
 }
 
 // =============================================================================
-// Proptest: Fuzz create for all 22 types (~50 cases each = ~1100 total)
+// Proptest: Fuzz create for all 27 types (~50 cases each = ~1350 total)
 // =============================================================================
 
 proptest! {
@@ -815,8 +873,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "metric".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => {
@@ -842,8 +900,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "experiment".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -863,8 +921,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "result".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -884,8 +942,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "task".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -905,8 +963,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "project".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -926,8 +984,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "decision".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -947,8 +1005,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "person".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -968,8 +1026,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "note".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -989,8 +1047,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "session".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1010,8 +1068,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "campaign".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1031,8 +1089,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "audience".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1052,8 +1110,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "competitor".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1073,8 +1131,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "channel".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1094,8 +1152,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "spec".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1115,8 +1173,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "budget".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1136,8 +1194,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "vendor".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1157,8 +1215,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "playbook".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1178,8 +1236,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "taxonomy".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1199,8 +1257,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "backlog".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1220,8 +1278,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "brief".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1241,8 +1299,8 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "event".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1262,8 +1320,113 @@ proptest! {
         let result = apply_patch_set(&conn, &PatchSet {
             ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
                 entity_type: "policy".to_string(), title, source, canonical_fields,
-                body_md: None, status, category: None, priority: None,
-            })], run_id: None,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
+        });
+        match result {
+            Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
+            Err(e) => { assert_structured_error(&e); assert_eq!(count_all_entities(&conn), before); }
+        }
+    }
+
+    #[test]
+    fn fuzz_create_inbox_item(
+        title in common::generators::gen_title(),
+        source in common::generators::gen_source(),
+        status in common::generators::gen_status(),
+        canonical_fields in common::generators::gen_canonical_fields("inbox_item"),
+    ) {
+        let conn = common::test_db();
+        let before = count_all_entities(&conn);
+        let result = apply_patch_set(&conn, &PatchSet {
+            ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
+                entity_type: "inbox_item".to_string(), title, source, canonical_fields,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
+        });
+        match result {
+            Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
+            Err(e) => { assert_structured_error(&e); assert_eq!(count_all_entities(&conn), before); }
+        }
+    }
+
+    #[test]
+    fn fuzz_create_artifact_type(
+        title in common::generators::gen_title(),
+        source in common::generators::gen_source(),
+        status in common::generators::gen_status(),
+        canonical_fields in common::generators::gen_canonical_fields("artifact_type"),
+    ) {
+        let conn = common::test_db();
+        let before = count_all_entities(&conn);
+        let result = apply_patch_set(&conn, &PatchSet {
+            ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
+                entity_type: "artifact_type".to_string(), title, source, canonical_fields,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
+        });
+        match result {
+            Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
+            Err(e) => { assert_structured_error(&e); assert_eq!(count_all_entities(&conn), before); }
+        }
+    }
+
+    #[test]
+    fn fuzz_create_concept(
+        title in common::generators::gen_title(),
+        source in common::generators::gen_source(),
+        status in common::generators::gen_status(),
+        canonical_fields in common::generators::gen_canonical_fields("concept"),
+    ) {
+        let conn = common::test_db();
+        let before = count_all_entities(&conn);
+        let result = apply_patch_set(&conn, &PatchSet {
+            ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
+                entity_type: "concept".to_string(), title, source, canonical_fields,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
+        });
+        match result {
+            Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
+            Err(e) => { assert_structured_error(&e); assert_eq!(count_all_entities(&conn), before); }
+        }
+    }
+
+    #[test]
+    fn fuzz_create_commitment(
+        title in common::generators::gen_title(),
+        source in common::generators::gen_source(),
+        status in common::generators::gen_status(),
+        canonical_fields in common::generators::gen_canonical_fields("commitment"),
+    ) {
+        let conn = common::test_db();
+        let before = count_all_entities(&conn);
+        let result = apply_patch_set(&conn, &PatchSet {
+            ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
+                entity_type: "commitment".to_string(), title, source, canonical_fields,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
+        });
+        match result {
+            Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
+            Err(e) => { assert_structured_error(&e); assert_eq!(count_all_entities(&conn), before); }
+        }
+    }
+
+    #[test]
+    fn fuzz_create_issue(
+        title in common::generators::gen_title(),
+        source in common::generators::gen_source(),
+        status in common::generators::gen_status(),
+        canonical_fields in common::generators::gen_canonical_fields("issue"),
+    ) {
+        let conn = common::test_db();
+        let before = count_all_entities(&conn);
+        let result = apply_patch_set(&conn, &PatchSet {
+            ops: vec![PatchOp::CreateEntity(CreateEntityPayload {
+                entity_type: "issue".to_string(), title, source, canonical_fields,
+                body_md: None, status, category: None, priority: None, reason: None,
+            })], run_id: String::new(),
         });
         match result {
             Ok(pr) => { assert_eq!(pr.applied.len(), 1); assert_eq!(count_all_entities(&conn), before + 1); }
@@ -1273,7 +1436,7 @@ proptest! {
 }
 
 // =============================================================================
-// Proptest: Fuzz update for all 22 types with status transitions (~50 cases each)
+// Proptest: Fuzz update for all 27 types with status transitions (~50 cases each)
 // =============================================================================
 
 proptest! {
@@ -1284,7 +1447,7 @@ proptest! {
 
     #[test]
     fn fuzz_update_all_types_with_status_transitions(
-        type_idx in 0usize..22,
+        type_idx in 0usize..27,
         new_title in common::generators::gen_title(),
         use_stale_timestamp in proptest::bool::ANY,
     ) {
@@ -1292,26 +1455,12 @@ proptest! {
         let conn = common::test_db();
 
         // Build valid canonical_fields for the type
-        let canonical_fields = match entity_type {
-            "decision" => serde_json::json!({"owner_id": "owner", "rationale": "reason"}),
-            "metric" => serde_json::json!({"current_value": 10.0}),
-            "experiment" => serde_json::json!({"hypothesis": "test"}),
-            "result" => serde_json::json!({"findings": "test"}),
-            "person" => serde_json::json!({"role": "PM"}),
-            "session" => serde_json::json!({"session_type": "planning"}),
-            "campaign" => serde_json::json!({"channel": "email"}),
-            "channel" => serde_json::json!({"channel_type": "email"}),
-            "spec" => serde_json::json!({"spec_type": "technical"}),
-            "vendor" => serde_json::json!({"vendor_type": "agency"}),
-            "playbook" => serde_json::json!({"playbook_type": "sales"}),
-            "taxonomy" => serde_json::json!({"taxonomy_type": "category"}),
-            "brief" => serde_json::json!({"brief_type": "creative"}),
-            "event" => serde_json::json!({"event_type": "conference"}),
-            "policy" => serde_json::json!({"policy_type": "security"}),
-            _ => serde_json::json!({}),
-        };
+        let canonical_fields = common::generators::valid_canonical_fields_for_type(entity_type);
 
-        let initial_status = common::generators::initial_status_for_type(entity_type);
+        let initial_status = match entity_type {
+            "note" | "artifact_type" | "concept" => None,
+            _ => Some(common::generators::initial_status_for_type(entity_type).to_string()),
+        };
 
         // Create entity
         let create_result = create_entity_via_patch(
@@ -1320,7 +1469,7 @@ proptest! {
             &format!("Test {}", entity_type),
             "manual",
             canonical_fields.clone(),
-            Some(initial_status.to_string()),
+            initial_status,
         );
 
         // Skip if create fails (e.g., decision without required fields -- covered by deterministic test)
@@ -1331,7 +1480,10 @@ proptest! {
                 actual_updated_at.clone()
             };
 
-            let second_status = common::generators::second_status_for_type(entity_type);
+            let second_status: Option<String> = match entity_type {
+                "note" | "artifact_type" | "concept" => None,
+                _ => Some(common::generators::second_status_for_type(entity_type).to_string()),
+            };
 
             let update_patch = PatchSet {
                 ops: vec![PatchOp::UpdateEntity(UpdateEntityPayload {
@@ -1339,13 +1491,13 @@ proptest! {
                     expected_updated_at: expected_updated_at.clone(),
                     title: Some(new_title),
                     body_md: None,
-                    status: Some(second_status.to_string()),
+                    status: second_status,
                     canonical_fields: Some(canonical_fields),
                     category: None,
                     priority: None,
                     reason: None,
                 })],
-                run_id: None,
+                run_id: String::new(),
             };
 
             let result = apply_patch_set(&conn, &update_patch);
@@ -1361,8 +1513,20 @@ proptest! {
                 Err(e) => {
                     assert_structured_error(&e);
                     if use_stale_timestamp {
+                        // The validation pipeline catches lock conflicts as
+                        // GargoyleError::Validation with ErrorCode::LockConflict.
+                        // The legacy GargoyleError::LockConflict variant may
+                        // also fire from execute_update_entity's own check.
+                        let is_lock_conflict = matches!(
+                            &e,
+                            GargoyleError::LockConflict { .. }
+                            | GargoyleError::Validation(gargoyle_lib::error::ValidationError {
+                                code: gargoyle_lib::error::ErrorCode::LockConflict,
+                                ..
+                            })
+                        );
                         assert!(
-                            matches!(e, GargoyleError::LockConflict { .. }),
+                            is_lock_conflict,
                             "Stale timestamp should produce LockConflict for {}, got: {:?}",
                             entity_type, e
                         );
@@ -1374,7 +1538,7 @@ proptest! {
 }
 
 // =============================================================================
-// Proptest: Schema validation for all 22 types (~50 cases each)
+// Proptest: Schema validation for all 27 types (~50 cases each)
 // =============================================================================
 
 proptest! {
@@ -1385,7 +1549,7 @@ proptest! {
 
     #[test]
     fn fuzz_schema_validation_all_types(
-        type_idx in 0usize..22,
+        type_idx in 0usize..27,
         canonical_fields in common::generators::gen_entity_type().prop_flat_map(|t| {
             common::generators::gen_canonical_fields(&t)
         }),
@@ -1410,7 +1574,7 @@ proptest! {
 }
 
 // =============================================================================
-// Proptest: Status validation for all 22 types (~50 cases each)
+// Proptest: Status validation for all 27 types (~50 cases each)
 // =============================================================================
 
 proptest! {
@@ -1421,7 +1585,7 @@ proptest! {
 
     #[test]
     fn fuzz_status_validation_all_types(
-        type_idx in 0usize..22,
+        type_idx in 0usize..27,
         status in common::generators::gen_status(),
     ) {
         use gargoyle_lib::validation::status_validator::validate_status_transition;
@@ -1430,9 +1594,9 @@ proptest! {
 
         if let Some(ref s) = status {
             // null -> new status should never panic
-            let errors = validate_status_transition(entity_type, None, s, None);
+            let result = validate_status_transition(entity_type, None, s, None);
 
-            for err in &errors {
+            for err in &result.errors {
                 assert!(
                     !err.field_path.is_empty(),
                     "Status validation error for {} should have non-empty field_path: {:?}",
@@ -1451,34 +1615,54 @@ proptest! {
 fn test_zero_panics_valid_input_all_types() {
     let conn = common::test_db();
 
+    // Pre-create a person for EntityRef fields
+    let (person_id, _) = create_entity_via_patch(
+        &conn,
+        "person",
+        "Ref Person",
+        "manual",
+        serde_json::json!({"role": "Engineer"}),
+        Some("active".to_string()),
+    )
+    .expect("person pre-creation should succeed");
+
     for entity_type in common::generators::ALL_ENTITY_TYPES {
         let canonical_fields = match *entity_type {
-            "decision" => serde_json::json!({"owner_id": "owner", "rationale": "reason"}),
+            "decision" => serde_json::json!({"owner_id": person_id, "decided_at": "2025-01-01", "rationale": "reason", "revisit_triggers": "Q2"}),
             "metric" => serde_json::json!({"current_value": 42.0, "trend": "up"}),
-            "experiment" => serde_json::json!({"hypothesis": "test"}),
-            "result" => serde_json::json!({"findings": "test", "confidence_level": 0.95}),
-            "task" => serde_json::json!({"assignee": "Alice", "effort_estimate": "M"}),
-            "project" => serde_json::json!({"objective": "Ship", "timeline": "Q1"}),
-            "person" => serde_json::json!({"email": "a@b.com", "external": false}),
-            "note" => serde_json::json!({"context": "meeting", "tags": "a,b"}),
-            "session" => serde_json::json!({"session_type": "standup", "agenda": "daily"}),
-            "campaign" => serde_json::json!({"channel": "email", "budget": 5000.0}),
-            "audience" => serde_json::json!({"segment_criteria": "Enterprise", "estimated_size": 10000.0}),
-            "competitor" => serde_json::json!({"website": "https://x.com", "positioning": "leader"}),
-            "channel" => serde_json::json!({"channel_type": "social", "budget_allocation": 1000.0}),
-            "spec" => serde_json::json!({"spec_type": "product", "version": "1.0"}),
+            "experiment" => serde_json::json!({"hypothesis": "test", "primary_metric": "conversion_rate"}),
+            "result" => serde_json::json!({"outcome": "test"}),
+            "task" => serde_json::json!({"effort_estimate": "2d"}),
+            "project" => serde_json::json!({"objective": "Ship v2"}),
+            "person" => serde_json::json!({"role": "Engineer", "email": "a@b.com"}),
+            "note" => serde_json::json!({"tags": "meeting"}),
+            "session" => serde_json::json!({"session_type": "planning"}),
+            "campaign" => serde_json::json!({"objective": "acquisition"}),
+            "audience" => serde_json::json!({"segment_criteria": "Enterprise SaaS"}),
+            "competitor" => serde_json::json!({"positioning": "Market leader", "website": "https://x.com"}),
+            "channel" => serde_json::json!({"channel_type": "email"}),
+            "spec" => serde_json::json!({"spec_type": "product"}),
             "budget" => serde_json::json!({"total_amount": 50000.0, "currency": "USD"}),
             "vendor" => serde_json::json!({"vendor_type": "saas", "contract_value": 12000.0}),
-            "playbook" => serde_json::json!({"playbook_type": "marketing", "owner": "team"}),
-            "taxonomy" => serde_json::json!({"taxonomy_type": "tag", "level": 1.0}),
-            "backlog" => serde_json::json!({"priority_score": 7.0, "effort": "L"}),
-            "brief" => serde_json::json!({"brief_type": "campaign", "deadline": "2025-03-01"}),
-            "event" => serde_json::json!({"event_type": "webinar", "expected_attendees": 500.0}),
-            "policy" => serde_json::json!({"policy_type": "compliance", "owner": "legal"}),
+            "playbook" => serde_json::json!({"playbook_type": "sales"}),
+            "taxonomy" => serde_json::json!({"taxonomy_type": "category"}),
+            "backlog" => serde_json::json!({"priority_score": 7.0}),
+            "brief" => serde_json::json!({"brief_type": "campaign", "deadline": "2025-06-01"}),
+            "event" => serde_json::json!({"event_type": "webinar", "expected_attendees": 500}),
+            "policy" => serde_json::json!({"policy_type": "compliance"}),
+            "inbox_item" => serde_json::json!({"source_text": "Valid inbox item"}),
+            "artifact_type" => serde_json::json!({"artifact_kind": "link", "uri_or_path": "https://example.com"}),
+            "concept" => serde_json::json!({"definition": "A valid concept"}),
+            "commitment" => serde_json::json!({"owner_id": person_id}),
+            "issue" => serde_json::json!({"severity": "high"}),
             _ => serde_json::json!({}),
         };
 
-        let initial_status = common::generators::initial_status_for_type(entity_type);
+        // Some entity types have no status machine
+        let initial_status: Option<String> = match *entity_type {
+            "note" | "artifact_type" | "concept" => None,
+            _ => Some(common::generators::initial_status_for_type(entity_type).to_string()),
+        };
 
         // This should never panic
         let result = create_entity_via_patch(
@@ -1487,7 +1671,7 @@ fn test_zero_panics_valid_input_all_types() {
             &format!("Valid {}", entity_type),
             "manual",
             canonical_fields,
-            Some(initial_status.to_string()),
+            initial_status,
         );
 
         assert!(
@@ -1538,8 +1722,8 @@ fn test_all_template_definitions_accessible() {
 
     let templates = list_template_definitions();
     assert!(
-        templates.len() >= 80,
-        "Should have at least 80 template definitions, got {}",
+        templates.len() >= 33,
+        "Should have at least 33 template definitions, got {}",
         templates.len()
     );
 

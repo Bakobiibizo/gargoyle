@@ -1,58 +1,39 @@
 // Step 2: status state machine
 
 use crate::error::{ErrorCode, ValidationError};
+use crate::schema::registry::SchemaRegistry;
 
-/// Valid status progressions per entity type.
-/// The order defines forward (left-to-right) vs backward (right-to-left) transitions.
-const METRIC_STATUSES: &[&str] = &["active", "paused", "deprecated", "archived"];
-const EXPERIMENT_STATUSES: &[&str] = &["draft", "running", "concluded", "archived"];
-const RESULT_STATUSES: &[&str] = &["draft", "final", "archived"];
-const TASK_STATUSES: &[&str] = &["backlog", "todo", "in_progress", "blocked", "done", "archived"];
-const PROJECT_STATUSES: &[&str] = &["planning", "active", "paused", "completed", "archived"];
-const DECISION_STATUSES: &[&str] = &["proposed", "accepted", "deprecated", "superseded"];
-const PERSON_STATUSES: &[&str] = &["active", "inactive", "archived"];
-const NOTE_STATUSES: &[&str] = &["draft", "final", "archived"];
-const SESSION_STATUSES: &[&str] = &["scheduled", "in_progress", "completed", "cancelled"];
-const CAMPAIGN_STATUSES: &[&str] = &["planning", "active", "paused", "completed", "archived"];
-const AUDIENCE_STATUSES: &[&str] = &["draft", "validated", "active", "archived"];
-const COMPETITOR_STATUSES: &[&str] = &["tracking", "dormant", "archived"];
-const CHANNEL_STATUSES: &[&str] = &["evaluating", "active", "scaling", "paused", "deprecated"];
-const SPEC_STATUSES: &[&str] = &["draft", "review", "approved", "deprecated"];
-const BUDGET_STATUSES: &[&str] = &["draft", "approved", "active", "closed"];
-const VENDOR_STATUSES: &[&str] = &["evaluating", "active", "on_hold", "terminated"];
-const PLAYBOOK_STATUSES: &[&str] = &["draft", "active", "deprecated", "archived"];
-const TAXONOMY_STATUSES: &[&str] = &["draft", "active", "archived"];
-const BACKLOG_STATUSES: &[&str] = &["open", "triaged", "scheduled", "closed"];
-const BRIEF_STATUSES: &[&str] = &["draft", "review", "approved", "archived"];
-const EVENT_STATUSES: &[&str] = &["proposed", "confirmed", "in_progress", "completed", "cancelled"];
-const POLICY_STATUSES: &[&str] = &["draft", "active", "under_review", "deprecated"];
+/// Result of a status transition validation.
+///
+/// - `errors`: hard validation failures (e.g., invalid status value). These block the write.
+/// - `warnings`: soft constraint notices (e.g., backward transition without reason,
+///   skip transitions). These do NOT block the write.
+#[derive(Debug, Clone)]
+pub struct StatusValidationResult {
+    pub errors: Vec<ValidationError>,
+    pub warnings: Vec<String>,
+}
 
-/// Get the valid status list for a given entity type.
-fn statuses_for_entity_type(entity_type: &str) -> Option<&'static [&'static str]> {
-    match entity_type {
-        "metric" => Some(METRIC_STATUSES),
-        "experiment" => Some(EXPERIMENT_STATUSES),
-        "result" => Some(RESULT_STATUSES),
-        "task" => Some(TASK_STATUSES),
-        "project" => Some(PROJECT_STATUSES),
-        "decision" => Some(DECISION_STATUSES),
-        "person" => Some(PERSON_STATUSES),
-        "note" => Some(NOTE_STATUSES),
-        "session" => Some(SESSION_STATUSES),
-        "campaign" => Some(CAMPAIGN_STATUSES),
-        "audience" => Some(AUDIENCE_STATUSES),
-        "competitor" => Some(COMPETITOR_STATUSES),
-        "channel" => Some(CHANNEL_STATUSES),
-        "spec" => Some(SPEC_STATUSES),
-        "budget" => Some(BUDGET_STATUSES),
-        "vendor" => Some(VENDOR_STATUSES),
-        "playbook" => Some(PLAYBOOK_STATUSES),
-        "taxonomy" => Some(TAXONOMY_STATUSES),
-        "backlog" => Some(BACKLOG_STATUSES),
-        "brief" => Some(BRIEF_STATUSES),
-        "event" => Some(EVENT_STATUSES),
-        "policy" => Some(POLICY_STATUSES),
-        _ => None,
+impl StatusValidationResult {
+    fn ok() -> Self {
+        Self {
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+
+    fn with_error(error: ValidationError) -> Self {
+        Self {
+            errors: vec![error],
+            warnings: Vec::new(),
+        }
+    }
+
+    fn with_warnings(warnings: Vec<String>) -> Self {
+        Self {
+            errors: Vec::new(),
+            warnings,
+        }
     }
 }
 
@@ -62,93 +43,107 @@ fn statuses_for_entity_type(entity_type: &str) -> Option<&'static [&'static str]
 /// - null -> any valid status: OK (creation, no reason needed)
 /// - Same status: OK (idempotent no-op)
 /// - Forward transition (earlier index -> later index): OK (no reason needed)
-/// - Backward transition (later index -> earlier index): requires `reason`, error if missing
-/// - Invalid status value: error with valid values listed
+///   - Skip transitions (jumping over intermediate states): OK with a warning
+/// - Backward transition (later index -> earlier index): soft constraint (warning, not error)
+///   - Without reason: warning suggesting a reason for audit
+///   - With reason: informational warning noting the backward transition
+/// - Invalid status value: error (hard reject) with valid values listed
 pub fn validate_status_transition(
     entity_type: &str,
     current_status: Option<&str>,
     new_status: &str,
     reason: Option<&str>,
-) -> Vec<ValidationError> {
-    let mut errors = Vec::new();
-
-    let valid_statuses = match statuses_for_entity_type(entity_type) {
+) -> StatusValidationResult {
+    let valid_statuses = match SchemaRegistry::global().valid_statuses(entity_type) {
         Some(s) => s,
         None => {
             // Unknown entity type -- we can't validate status, but we don't error here
             // since entity type validation is handled elsewhere. Just return empty.
-            return errors;
+            return StatusValidationResult::ok();
         }
     };
 
-    // Check that new_status is a valid value
-    let new_index = match valid_statuses.iter().position(|&s| s == new_status) {
+    // Check that new_status is a valid value -- this is still a hard error
+    let new_index = match valid_statuses.iter().position(|s| s == new_status) {
         Some(idx) => idx,
         None => {
-            errors.push(ValidationError {
+            let joined = valid_statuses.join(", ");
+            return StatusValidationResult::with_error(ValidationError {
                 code: ErrorCode::InvalidStatusTransition,
                 field_path: "status".to_string(),
                 message: format!(
                     "Invalid status '{}' for entity type '{}'. Valid statuses: [{}]",
-                    new_status,
-                    entity_type,
-                    valid_statuses.join(", ")
+                    new_status, entity_type, joined
                 ),
-                expected: Some(format!("one of [{}]", valid_statuses.join(", "))),
+                expected: Some(format!("one of [{}]", joined)),
                 actual: Some(new_status.to_string()),
             });
-            return errors;
         }
     };
 
     // null -> any valid status is always OK
     let current = match current_status {
-        None => return errors,
+        None => return StatusValidationResult::ok(),
         Some(c) => c,
     };
 
     // Same status is idempotent, always OK
     if current == new_status {
-        return errors;
+        return StatusValidationResult::ok();
     }
 
     // Find current status index
-    let current_index = match valid_statuses.iter().position(|&s| s == current) {
+    let current_index = match valid_statuses.iter().position(|s| s == current) {
         Some(idx) => idx,
         None => {
             // Current status is invalid (data corruption?). Allow the transition
             // to a valid status without requiring reason, since we can't determine direction.
-            return errors;
+            return StatusValidationResult::ok();
         }
     };
 
-    // Forward transition: OK
+    // Forward transition: OK, but check for skip
     if new_index > current_index {
-        return errors;
+        let mut warnings = Vec::new();
+        if new_index - current_index > 1 {
+            // Skip transition: jumping over intermediate states
+            let skipped: Vec<&str> = valid_statuses[current_index + 1..new_index]
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
+            warnings.push(format!(
+                "Status skip transition from '{}' to '{}' (skipped: {})",
+                current,
+                new_status,
+                skipped.join(", ")
+            ));
+        }
+        return StatusValidationResult::with_warnings(warnings);
     }
 
-    // Backward transition: requires reason
+    // Backward transition: soft constraint (warning, not error)
     if new_index < current_index {
+        let mut warnings = Vec::new();
         match reason {
             Some(r) if !r.trim().is_empty() => {
-                // Reason provided, backward transition is allowed
+                // Reason provided -- informational warning noting the backward transition
+                warnings.push(format!(
+                    "Backward status transition from '{}' to '{}' with reason: {}",
+                    current, new_status, r.trim()
+                ));
             }
             _ => {
-                errors.push(ValidationError {
-                    code: ErrorCode::InvalidStatusTransition,
-                    field_path: "status".to_string(),
-                    message: format!(
-                        "Backward status transition from '{}' to '{}' requires a reason",
-                        current, new_status
-                    ),
-                    expected: Some("reason field must be provided for backward transitions".to_string()),
-                    actual: None,
-                });
+                // No reason provided -- warning suggesting a reason for audit
+                warnings.push(format!(
+                    "Backward status transition from '{}' to '{}' without reason. Consider providing a reason for audit.",
+                    current, new_status
+                ));
             }
         }
+        return StatusValidationResult::with_warnings(warnings);
     }
 
-    errors
+    StatusValidationResult::ok()
 }
 
 #[cfg(test)]
@@ -159,116 +154,179 @@ mod tests {
 
     #[test]
     fn test_metric_null_to_active() {
-        let errors = validate_status_transition("metric", None, "active", None);
-        assert!(errors.is_empty());
+        let result = validate_status_transition("metric", None, "active", None);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
     }
 
     #[test]
     fn test_metric_null_to_archived() {
-        let errors = validate_status_transition("metric", None, "archived", None);
-        assert!(errors.is_empty());
+        let result = validate_status_transition("metric", None, "archived", None);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
     }
 
     #[test]
     fn test_metric_forward_active_to_paused() {
-        let errors = validate_status_transition("metric", Some("active"), "paused", None);
-        assert!(errors.is_empty());
+        let result = validate_status_transition("metric", Some("active"), "paused", None);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
     }
 
     #[test]
     fn test_metric_forward_active_to_archived() {
-        let errors = validate_status_transition("metric", Some("active"), "archived", None);
-        assert!(errors.is_empty());
+        let result = validate_status_transition("metric", Some("active"), "archived", None);
+        assert!(result.errors.is_empty());
+        // Skip warning: skips paused and deprecated
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("skip"));
+        assert!(result.warnings[0].contains("paused"));
+        assert!(result.warnings[0].contains("deprecated"));
     }
 
     #[test]
     fn test_metric_same_status_idempotent() {
-        let errors = validate_status_transition("metric", Some("active"), "active", None);
-        assert!(errors.is_empty());
+        let result = validate_status_transition("metric", Some("active"), "active", None);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
     }
 
     #[test]
     fn test_metric_backward_without_reason() {
-        let errors = validate_status_transition("metric", Some("paused"), "active", None);
-        assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0].code, ErrorCode::InvalidStatusTransition));
-        assert!(errors[0].message.contains("requires a reason"));
+        let result = validate_status_transition("metric", Some("paused"), "active", None);
+        // No errors -- backward transitions are soft constraints
+        assert!(result.errors.is_empty());
+        // But there is a warning
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("Backward status transition"));
+        assert!(result.warnings[0].contains("without reason"));
+        assert!(result.warnings[0].contains("paused"));
+        assert!(result.warnings[0].contains("active"));
     }
 
     #[test]
     fn test_metric_backward_with_reason() {
-        let errors = validate_status_transition("metric", Some("paused"), "active", Some("reactivating"));
-        assert!(errors.is_empty());
+        let result = validate_status_transition("metric", Some("paused"), "active", Some("reactivating"));
+        assert!(result.errors.is_empty());
+        // Informational warning noting the backward transition with reason
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("Backward status transition"));
+        assert!(result.warnings[0].contains("reactivating"));
     }
 
     #[test]
-    fn test_metric_backward_empty_reason_rejected() {
-        let errors = validate_status_transition("metric", Some("paused"), "active", Some("  "));
-        assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0].code, ErrorCode::InvalidStatusTransition));
+    fn test_metric_backward_empty_reason_warns() {
+        let result = validate_status_transition("metric", Some("paused"), "active", Some("  "));
+        // No error -- but a warning about missing reason
+        assert!(result.errors.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("without reason"));
     }
 
     #[test]
     fn test_metric_invalid_status() {
-        let errors = validate_status_transition("metric", Some("active"), "invalid_status", None);
-        assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0].code, ErrorCode::InvalidStatusTransition));
-        assert!(errors[0].message.contains("Invalid status"));
+        let result = validate_status_transition("metric", Some("active"), "invalid_status", None);
+        assert_eq!(result.errors.len(), 1);
+        assert!(matches!(result.errors[0].code, ErrorCode::InvalidStatusTransition));
+        assert!(result.errors[0].message.contains("Invalid status"));
     }
 
     // --- Experiment status tests ---
 
     #[test]
     fn test_experiment_forward_draft_to_running() {
-        let errors = validate_status_transition("experiment", Some("draft"), "running", None);
-        assert!(errors.is_empty());
+        let result = validate_status_transition("experiment", Some("draft"), "running", None);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
     }
 
     #[test]
-    fn test_experiment_backward_running_to_draft_needs_reason() {
-        let errors = validate_status_transition("experiment", Some("running"), "draft", None);
-        assert_eq!(errors.len(), 1);
+    fn test_experiment_backward_running_to_draft_warns() {
+        let result = validate_status_transition("experiment", Some("running"), "draft", None);
+        // No errors -- backward is a soft constraint now
+        assert!(result.errors.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("Backward"));
     }
 
     #[test]
     fn test_experiment_backward_with_reason() {
-        let errors = validate_status_transition("experiment", Some("running"), "draft", Some("needs redesign"));
-        assert!(errors.is_empty());
+        let result = validate_status_transition("experiment", Some("running"), "draft", Some("needs redesign"));
+        assert!(result.errors.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("needs redesign"));
     }
 
     // --- Result status tests ---
 
     #[test]
-    fn test_result_forward_draft_to_final() {
-        let errors = validate_status_transition("result", Some("draft"), "final", None);
-        assert!(errors.is_empty());
+    fn test_result_forward_preliminary_to_final() {
+        let result = validate_status_transition("result", Some("preliminary"), "final", None);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
     }
 
     #[test]
-    fn test_result_backward_final_to_draft_needs_reason() {
-        let errors = validate_status_transition("result", Some("final"), "draft", None);
-        assert_eq!(errors.len(), 1);
+    fn test_result_backward_final_to_preliminary_warns() {
+        let result = validate_status_transition("result", Some("final"), "preliminary", None);
+        assert!(result.errors.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("Backward"));
     }
 
     #[test]
     fn test_result_backward_with_reason() {
-        let errors = validate_status_transition("result", Some("final"), "draft", Some("corrections needed"));
-        assert!(errors.is_empty());
+        let result = validate_status_transition("result", Some("final"), "preliminary", Some("corrections needed"));
+        assert!(result.errors.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("corrections needed"));
     }
 
     // --- Unknown entity type ---
 
     #[test]
     fn test_unknown_entity_type_no_errors() {
-        let errors = validate_status_transition("unknown_type", Some("a"), "b", None);
-        assert!(errors.is_empty());
+        let result = validate_status_transition("unknown_type", Some("a"), "b", None);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
     }
 
     // --- Edge case: current status invalid in schema ---
 
     #[test]
     fn test_corrupt_current_status_allows_transition() {
-        let errors = validate_status_transition("metric", Some("bogus"), "active", None);
-        assert!(errors.is_empty());
+        let result = validate_status_transition("metric", Some("bogus"), "active", None);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
+    }
+
+    // --- Skip transition tests ---
+
+    #[test]
+    fn test_experiment_skip_draft_to_archived() {
+        let result = validate_status_transition("experiment", Some("draft"), "archived", None);
+        assert!(result.errors.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("skip"));
+        assert!(result.warnings[0].contains("running"));
+        assert!(result.warnings[0].contains("concluded"));
+    }
+
+    #[test]
+    fn test_task_skip_open_to_done() {
+        let result = validate_status_transition("task", Some("open"), "done", None);
+        assert!(result.errors.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("skip"));
+        assert!(result.warnings[0].contains("in_progress"));
+        assert!(result.warnings[0].contains("blocked"));
+    }
+
+    #[test]
+    fn test_forward_single_step_no_skip_warning() {
+        // Adjacent forward transitions should NOT produce a skip warning
+        let result = validate_status_transition("experiment", Some("draft"), "running", None);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
     }
 }

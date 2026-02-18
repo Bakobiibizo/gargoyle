@@ -1,4 +1,10 @@
+Template Key: dev-db-schema
 Category: development
+Version: 1.0
+Maturity: workflow
+Produces Entities: spec
+Produces Relations: implements
+Prerequisite: spec >= 1 | suggested: dev-requirements-to-spec | DB schema design requires a spec for data model context
 Response Format: mixed
 
 ---

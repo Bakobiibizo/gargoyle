@@ -1,4 +1,10 @@
+Template Key: content-creative-brief-builder
 Category: content
+Version: 1.0
+Maturity: workflow
+Produces Entities: brief
+Produces Relations: supports
+Prerequisite: campaign >= 1 | Creative briefs need a campaign context to design for
 Response Format: mixed
 
 ---

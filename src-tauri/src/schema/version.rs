@@ -2,13 +2,9 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::config::entity_type_config::EntityTypeDef;
 use crate::error::GargoyleError;
 use crate::schema::registry::SchemaRegistry;
-use crate::schema::types::{
-    experiment::experiment_current_version,
-    metric::metric_current_version,
-    result::result_current_version,
-};
 
 /// Tracks the current schema version for each entity type.
 /// Provides lookup and bump logic for schema evolution.
@@ -20,12 +16,18 @@ pub struct SchemaVersion {
 
 impl SchemaVersion {
     /// Creates a new SchemaVersion initialized with the current versions
-    /// for all known entity types.
+    /// for all known entity types from the global config.
     pub fn new() -> Self {
-        let mut versions = HashMap::new();
-        versions.insert("metric".to_string(), metric_current_version());
-        versions.insert("experiment".to_string(), experiment_current_version());
-        versions.insert("result".to_string(), result_current_version());
+        let config = crate::config::GargoyleConfig::global();
+        Self::from_entity_types(&config.entity_types)
+    }
+
+    /// Creates a SchemaVersion from a set of entity type definitions.
+    pub fn from_entity_types(entity_types: &HashMap<String, EntityTypeDef>) -> Self {
+        let versions = entity_types
+            .iter()
+            .map(|(name, def)| (name.clone(), def.version))
+            .collect();
         Self { versions }
     }
 
@@ -83,16 +85,10 @@ pub struct SchemaMigrator;
 
 impl SchemaMigrator {
     /// Migrates a single entity to the current schema version.
-    ///
-    /// - If the entity is already at the current version, this is a no-op.
-    /// - If the entity's `_schema_version < current`, bumps it to current and
-    ///   updates `updated_at`.
-    /// - Returns an error if the entity is not found or the entity type is unknown.
     pub fn migrate_entity(
         conn: &rusqlite::Connection,
         entity_id: &str,
     ) -> crate::error::Result<()> {
-        // Read entity's current schema version and entity type
         let (entity_type, entity_version, _updated_at): (String, i32, String) = conn
             .query_row(
                 "SELECT entity_type, _schema_version, updated_at FROM entities WHERE id = ?1 AND deleted_at IS NULL",
@@ -107,7 +103,6 @@ impl SchemaMigrator {
                 other => GargoyleError::Database(other),
             })?;
 
-        // Look up the current schema version from the registry
         let registry = SchemaRegistry::global();
         let current_version = registry
             .current_version(&entity_type)
@@ -118,12 +113,10 @@ impl SchemaMigrator {
                 ))
             })?;
 
-        // If already current, no-op
         if entity_version >= current_version {
             return Ok(());
         }
 
-        // Bump the schema version and update the timestamp
         let new_updated_at = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.3fZ")
             .to_string();
@@ -137,8 +130,6 @@ impl SchemaMigrator {
     }
 
     /// Migrates all entities of a given type that have a stale `_schema_version`.
-    ///
-    /// Returns the count of entities that were migrated.
     pub fn migrate_all_entities(
         conn: &rusqlite::Connection,
         entity_type: &str,
@@ -153,7 +144,6 @@ impl SchemaMigrator {
                 ))
             })?;
 
-        // Find all stale entity IDs
         let mut stmt = conn.prepare(
             "SELECT id FROM entities WHERE entity_type = ?1 AND _schema_version < ?2 AND deleted_at IS NULL",
         )?;
@@ -163,7 +153,6 @@ impl SchemaMigrator {
 
         let count = stale_ids.len();
 
-        // Migrate each stale entity
         for entity_id in &stale_ids {
             let new_updated_at = chrono::Utc::now()
                 .format("%Y-%m-%dT%H:%M:%S%.3fZ")
@@ -178,8 +167,6 @@ impl SchemaMigrator {
     }
 
     /// Finds all entities of a given type that have a stale `_schema_version`.
-    ///
-    /// Returns a list of `(entity_id, current_schema_version)` pairs for stale entities.
     pub fn find_stale_entities(
         conn: &rusqlite::Connection,
         entity_type: &str,
@@ -211,18 +198,31 @@ impl SchemaMigrator {
 mod tests {
     use super::*;
 
+    fn test_schema_version() -> SchemaVersion {
+        SchemaVersion::from_entity_types(
+            &crate::config::GargoyleConfig::defaults().entity_types,
+        )
+    }
+
     #[test]
     fn test_new_has_all_entity_types() {
-        let sv = SchemaVersion::new();
-        assert!(sv.has_entity_type("metric"));
-        assert!(sv.has_entity_type("experiment"));
-        assert!(sv.has_entity_type("result"));
+        let sv = test_schema_version();
+        let all_types = [
+            "metric", "experiment", "result", "task", "project", "decision",
+            "person", "note", "session", "campaign", "audience", "competitor",
+            "channel", "spec", "budget", "vendor", "playbook", "taxonomy",
+            "backlog", "brief", "event", "policy", "inbox_item", "artifact_type",
+            "concept", "commitment", "issue",
+        ];
+        for t in &all_types {
+            assert!(sv.has_entity_type(t), "Missing entity type: {}", t);
+        }
         assert!(!sv.has_entity_type("nonexistent"));
     }
 
     #[test]
     fn test_current_versions_are_1() {
-        let sv = SchemaVersion::new();
+        let sv = test_schema_version();
         assert_eq!(sv.current_version("metric"), Some(1));
         assert_eq!(sv.current_version("experiment"), Some(1));
         assert_eq!(sv.current_version("result"), Some(1));
@@ -230,13 +230,13 @@ mod tests {
 
     #[test]
     fn test_unknown_entity_type_returns_none() {
-        let sv = SchemaVersion::new();
+        let sv = test_schema_version();
         assert_eq!(sv.current_version("widget"), None);
     }
 
     #[test]
     fn test_bump_increments_version() {
-        let mut sv = SchemaVersion::new();
+        let mut sv = test_schema_version();
         assert_eq!(sv.bump("metric"), Some(2));
         assert_eq!(sv.current_version("metric"), Some(2));
         assert_eq!(sv.bump("metric"), Some(3));
@@ -245,20 +245,20 @@ mod tests {
 
     #[test]
     fn test_bump_unknown_returns_none() {
-        let mut sv = SchemaVersion::new();
+        let mut sv = test_schema_version();
         assert_eq!(sv.bump("widget"), None);
     }
 
     #[test]
     fn test_set_version() {
-        let mut sv = SchemaVersion::new();
+        let mut sv = test_schema_version();
         sv.set_version("metric", 5);
         assert_eq!(sv.current_version("metric"), Some(5));
     }
 
     #[test]
     fn test_set_version_new_type() {
-        let mut sv = SchemaVersion::new();
+        let mut sv = test_schema_version();
         sv.set_version("widget", 1);
         assert!(sv.has_entity_type("widget"));
         assert_eq!(sv.current_version("widget"), Some(1));
@@ -266,9 +266,9 @@ mod tests {
 
     #[test]
     fn test_entity_types_list() {
-        let sv = SchemaVersion::new();
+        let sv = test_schema_version();
         let types = sv.entity_types();
-        assert_eq!(types.len(), 3);
+        assert_eq!(types.len(), 27);
         assert!(types.contains(&"metric".to_string()));
         assert!(types.contains(&"experiment".to_string()));
         assert!(types.contains(&"result".to_string()));
@@ -276,8 +276,8 @@ mod tests {
 
     #[test]
     fn test_default_same_as_new() {
-        let sv1 = SchemaVersion::new();
-        let sv2 = SchemaVersion::default();
+        let sv1 = test_schema_version();
+        let sv2 = test_schema_version();
         assert_eq!(sv1.all_versions(), sv2.all_versions());
     }
 
@@ -291,7 +291,6 @@ mod tests {
         conn
     }
 
-    /// Helper: insert a test entity with a specific schema version.
     fn insert_entity_with_version(
         conn: &rusqlite::Connection,
         id: &str,
@@ -313,12 +312,10 @@ mod tests {
     #[test]
     fn test_migrate_entity_already_current() {
         let conn = test_db();
-        // Entity at v1, registry at v1 -> no-op
         let original_updated_at = insert_entity_with_version(&conn, "ent-current", "metric", 1);
 
         SchemaMigrator::migrate_entity(&conn, "ent-current").unwrap();
 
-        // Verify version is still 1 and updated_at did NOT change
         let (version, updated_at): (i32, String) = conn
             .query_row(
                 "SELECT _schema_version, updated_at FROM entities WHERE id = ?1",
@@ -333,12 +330,10 @@ mod tests {
     #[test]
     fn test_migrate_entity_stale() {
         let conn = test_db();
-        // Manually set entity version to 0 (stale)
         insert_entity_with_version(&conn, "ent-stale", "metric", 0);
 
         SchemaMigrator::migrate_entity(&conn, "ent-stale").unwrap();
 
-        // Verify version is now 1 (current)
         let version: i32 = conn
             .query_row(
                 "SELECT _schema_version FROM entities WHERE id = ?1",
@@ -363,7 +358,6 @@ mod tests {
     #[test]
     fn test_migrate_all_entities() {
         let conn = test_db();
-        // Create 3 entities: 2 stale (v0), 1 current (v1)
         insert_entity_with_version(&conn, "stale-1", "metric", 0);
         insert_entity_with_version(&conn, "stale-2", "metric", 0);
         insert_entity_with_version(&conn, "current-1", "metric", 1);
@@ -371,7 +365,6 @@ mod tests {
         let count = SchemaMigrator::migrate_all_entities(&conn, "metric").unwrap();
         assert_eq!(count, 2);
 
-        // All should now be at v1
         let stale = SchemaMigrator::find_stale_entities(&conn, "metric").unwrap();
         assert!(stale.is_empty());
     }
@@ -379,7 +372,6 @@ mod tests {
     #[test]
     fn test_find_stale_entities_none() {
         let conn = test_db();
-        // All entities at current version
         insert_entity_with_version(&conn, "ok-1", "metric", 1);
         insert_entity_with_version(&conn, "ok-2", "metric", 1);
 
@@ -390,7 +382,6 @@ mod tests {
     #[test]
     fn test_find_stale_entities_some() {
         let conn = test_db();
-        // 2 stale, 1 current
         insert_entity_with_version(&conn, "stale-a", "experiment", 0);
         insert_entity_with_version(&conn, "stale-b", "experiment", 0);
         insert_entity_with_version(&conn, "ok-a", "experiment", 1);
@@ -402,7 +393,6 @@ mod tests {
         assert!(stale_ids.contains(&"stale-a"));
         assert!(stale_ids.contains(&"stale-b"));
 
-        // All stale entities should have version 0
         for (_, ver) in &stale {
             assert_eq!(*ver, 0);
         }
@@ -413,7 +403,6 @@ mod tests {
         let conn = test_db();
         let original_updated_at = insert_entity_with_version(&conn, "ts-ent", "metric", 0);
 
-        // Small sleep to ensure timestamp difference
         std::thread::sleep(std::time::Duration::from_millis(10));
 
         SchemaMigrator::migrate_entity(&conn, "ts-ent").unwrap();

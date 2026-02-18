@@ -38,12 +38,68 @@ pub struct ChatRequest {
     pub temperature: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<ToolDefinition>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
-    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    #[serde(rename = "type")]
+    pub tool_type: String,
+    pub function: FunctionDefinition,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCall {
+    /// Tool call ID. Many local models omit this or return null.
+    #[serde(default = "generate_tool_call_id")]
+    pub id: String,
+    #[serde(rename = "type", default)]
+    pub call_type: String,
+    pub function: FunctionCall,
+}
+
+fn generate_tool_call_id() -> String {
+    format!("call_{}", uuid::Uuid::new_v4().to_string().replace('-', "")[..12].to_string())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionCall {
+    pub name: String,
+    /// Arguments JSON. Accepts both a JSON string and a JSON object (stringified on deser).
+    #[serde(deserialize_with = "deserialize_arguments")]
+    pub arguments: String,
+}
+
+/// Local models sometimes emit `arguments` as a JSON object instead of a string.
+/// This deserializer accepts both forms.
+fn deserialize_arguments<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(s) => Ok(s),
+        other => Ok(other.to_string()),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +144,17 @@ impl LlmClient {
 
     /// Send a chat completion request and return the full response.
     pub fn chat(&self, messages: Vec<ChatMessage>, temperature: Option<f64>, max_tokens: Option<u32>) -> Result<ChatResponse> {
+        self.chat_with_tools(messages, temperature, max_tokens, None)
+    }
+
+    /// Send a chat completion request with optional tool definitions.
+    pub fn chat_with_tools(
+        &self,
+        messages: Vec<ChatMessage>,
+        temperature: Option<f64>,
+        max_tokens: Option<u32>,
+        tools: Option<Vec<ToolDefinition>>,
+    ) -> Result<ChatResponse> {
         let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
 
         let request = ChatRequest {
@@ -95,6 +162,7 @@ impl LlmClient {
             messages,
             temperature,
             max_tokens,
+            tools,
         };
 
         let response = self.http
@@ -113,37 +181,63 @@ impl LlmClient {
             )));
         }
 
-        let chat_response: ChatResponse = response
-            .json()
-            .map_err(|e| GargoyleError::Schema(format!("Failed to parse LLM response: {}", e)))?;
+        let body = response.text()
+            .map_err(|e| GargoyleError::Schema(format!("Failed to read LLM response body: {}", e)))?;
 
-        Ok(chat_response)
+        // Try strict deserialization first
+        match serde_json::from_str::<ChatResponse>(&body) {
+            Ok(parsed) => Ok(parsed),
+            Err(strict_err) => {
+                // Strict parse failed — try to salvage content from the raw JSON.
+                // This handles cases where tool_calls have unexpected shapes but
+                // the response still contains usable text content.
+                if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&body) {
+                    if let Some(content) = raw["choices"][0]["message"]["content"].as_str() {
+                        return Ok(ChatResponse {
+                            id: raw["id"].as_str().map(|s| s.to_string()),
+                            choices: vec![ChatChoice {
+                                index: 0,
+                                message: ChatMessage {
+                                    role: "assistant".to_string(),
+                                    content: Some(content.to_string()),
+                                    tool_calls: None,
+                                    tool_call_id: None,
+                                },
+                                finish_reason: raw["choices"][0]["finish_reason"].as_str().map(|s| s.to_string()),
+                            }],
+                            usage: None,
+                        });
+                    }
+                }
+                Err(GargoyleError::Schema(format!("Failed to parse LLM response: {}", strict_err)))
+            }
+        }
     }
 
     /// Convenience: send a single user message and get the assistant reply text.
     pub fn complete(&self, prompt: &str) -> Result<String> {
         let messages = vec![
-            ChatMessage { role: "user".into(), content: prompt.into() },
+            ChatMessage { role: "user".into(), content: Some(prompt.into()), tool_calls: None, tool_call_id: None },
         ];
 
         let response = self.chat(messages, None, None)?;
 
         response.choices.first()
-            .map(|c| c.message.content.clone())
+            .and_then(|c| c.message.content.clone())
             .ok_or_else(|| GargoyleError::Schema("LLM returned no choices".into()))
     }
 
     /// Send a system + user message pair and get the assistant reply text.
     pub fn complete_with_system(&self, system: &str, user: &str) -> Result<String> {
         let messages = vec![
-            ChatMessage { role: "system".into(), content: system.into() },
-            ChatMessage { role: "user".into(), content: user.into() },
+            ChatMessage { role: "system".into(), content: Some(system.into()), tool_calls: None, tool_call_id: None },
+            ChatMessage { role: "user".into(), content: Some(user.into()), tool_calls: None, tool_call_id: None },
         ];
 
         let response = self.chat(messages, None, None)?;
 
         response.choices.first()
-            .map(|c| c.message.content.clone())
+            .and_then(|c| c.message.content.clone())
             .ok_or_else(|| GargoyleError::Schema("LLM returned no choices".into()))
     }
 
@@ -176,10 +270,11 @@ mod tests {
         let request = ChatRequest {
             model: "test-model".into(),
             messages: vec![
-                ChatMessage { role: "user".into(), content: "hello".into() },
+                ChatMessage { role: "user".into(), content: Some("hello".into()), tool_calls: None, tool_call_id: None },
             ],
             temperature: Some(0.7),
             max_tokens: None,
+            tools: None,
         };
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["model"], "test-model");
@@ -187,6 +282,7 @@ mod tests {
         assert_eq!(json["messages"][0]["content"], "hello");
         assert_eq!(json["temperature"], 0.7);
         assert!(json.get("max_tokens").is_none());
+        assert!(json.get("tools").is_none());
     }
 
     #[test]
@@ -202,7 +298,7 @@ mod tests {
         }"#;
         let response: ChatResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.choices.len(), 1);
-        assert_eq!(response.choices[0].message.content, "Hello!");
+        assert_eq!(response.choices[0].message.content.as_deref(), Some("Hello!"));
         assert_eq!(response.usage.unwrap().total_tokens, Some(7));
     }
 
@@ -217,8 +313,35 @@ mod tests {
             }]
         }"#;
         let response: ChatResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.choices[0].message.content, "Hi");
+        assert_eq!(response.choices[0].message.content.as_deref(), Some("Hi"));
         assert!(response.id.is_none());
         assert!(response.usage.is_none());
+    }
+
+    #[test]
+    fn test_chat_response_with_tool_calls() {
+        let json = r#"{
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_123",
+                        "type": "function",
+                        "function": {
+                            "name": "search_entities",
+                            "arguments": "{\"query\": \"tasks\"}"
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        }"#;
+        let response: ChatResponse = serde_json::from_str(json).unwrap();
+        assert!(response.choices[0].message.content.is_none());
+        let tool_calls = response.choices[0].message.tool_calls.as_ref().unwrap();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].function.name, "search_entities");
     }
 }

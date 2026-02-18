@@ -1,0 +1,32 @@
+version = 1
+statuses = ["active", "acquired", "defunct", "irrelevant"]
+
+[[fields]]
+name = "website"
+type = "String"
+required = false
+description = "Competitor website URL"
+
+[[fields]]
+name = "positioning"
+type = "String"
+required = false
+description = "Competitor market positioning"
+
+[[fields]]
+name = "strengths"
+type = "String"
+required = false
+description = "Known strengths of the competitor"
+
+[[fields]]
+name = "weaknesses"
+type = "String"
+required = false
+description = "Known weaknesses of the competitor"
+
+[[fields]]
+name = "market_share"
+type = "String"
+required = false
+description = "Estimated market share"

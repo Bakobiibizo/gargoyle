@@ -1,4 +1,10 @@
+Template Key: dev-security-threat-model
 Category: development
+Version: 1.0
+Maturity: advanced
+Produces Entities: note
+Produces Relations: secures
+Prerequisite: spec >= 1 | suggested: dev-requirements-to-spec | Threat models need a spec to identify attack surfaces
 Response Format: mixed
 
 ---

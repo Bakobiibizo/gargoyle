@@ -1,5 +1,6 @@
 // Step 4: FK + entity_ref type + soft-delete checks
 
+use crate::config::GargoyleConfig;
 use crate::error::{ErrorCode, ValidationError};
 use crate::schema::field_def::{FieldDef, FieldType};
 use serde_json::Value;
@@ -7,7 +8,10 @@ use serde_json::Value;
 /// Lookup function signature: given an entity ID, returns:
 /// - None if the entity does not exist
 /// - Some((entity_type, deleted_at)) where deleted_at is None if not soft-deleted
-pub type EntityLookup = dyn Fn(&str) -> Option<(String, Option<String>)>;
+///
+/// The lifetime parameter `'a` allows callers to pass closures that borrow
+/// non-`'static` data (e.g. a database connection reference).
+pub type EntityLookup<'a> = dyn Fn(&str) -> Option<(String, Option<String>)> + 'a;
 
 /// Validate that both endpoints of a relation exist and are not soft-deleted.
 ///
@@ -18,7 +22,7 @@ pub fn validate_relation_refs(
     to_id: &str,
     relation_type: &str,
     approved_custom_types: &[String],
-    lookup: &EntityLookup,
+    lookup: &EntityLookup<'_>,
 ) -> Vec<ValidationError> {
     let mut errors = Vec::new();
 
@@ -29,6 +33,8 @@ pub fn validate_relation_refs(
     validate_entity_exists(to_id, "to_id", lookup, &mut errors);
 
     // Validate relation_type
+    let canonical = &GargoyleConfig::global().canonical_relation_types;
+
     if relation_type.starts_with("custom:") {
         if !approved_custom_types.iter().any(|t| t == relation_type) {
             errors.push(ValidationError {
@@ -43,6 +49,21 @@ pub fn validate_relation_refs(
                 actual: Some(relation_type.to_string()),
             });
         }
+    } else if !canonical.iter().any(|t| t == relation_type) {
+        let canonical_str = canonical.join(", ");
+        errors.push(ValidationError {
+            code: ErrorCode::UnknownRelationType,
+            field_path: "relation_type".to_string(),
+            message: format!(
+                "Unknown relation type '{}'. Must be one of the canonical types or use 'custom:' prefix.",
+                relation_type
+            ),
+            expected: Some(format!(
+                "one of [{}] or 'custom:' prefix",
+                canonical_str
+            )),
+            actual: Some(relation_type.to_string()),
+        });
     }
 
     errors
@@ -57,7 +78,7 @@ pub fn validate_relation_refs(
 pub fn validate_entity_refs(
     fields: &Value,
     field_defs: &[FieldDef],
-    lookup: &EntityLookup,
+    lookup: &EntityLookup<'_>,
 ) -> Vec<ValidationError> {
     let mut errors = Vec::new();
 
@@ -138,7 +159,7 @@ pub fn validate_entity_refs(
 pub fn validate_entity_exists(
     entity_id: &str,
     field_path: &str,
-    lookup: &EntityLookup,
+    lookup: &EntityLookup<'_>,
     errors: &mut Vec<ValidationError>,
 ) {
     match lookup(entity_id) {
@@ -186,13 +207,13 @@ mod tests {
 
     #[test]
     fn test_valid_relation() {
-        let errors = validate_relation_refs("entity-1", "entity-2", "relates_to", &[], &mock_lookup);
+        let errors = validate_relation_refs("entity-1", "entity-2", "related_to", &[], &mock_lookup);
         assert!(errors.is_empty());
     }
 
     #[test]
     fn test_relation_from_not_found() {
-        let errors = validate_relation_refs("nonexistent", "entity-2", "relates_to", &[], &mock_lookup);
+        let errors = validate_relation_refs("nonexistent", "entity-2", "related_to", &[], &mock_lookup);
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0].code, ErrorCode::EntityNotFound));
         assert_eq!(errors[0].field_path, "from_id");
@@ -200,7 +221,7 @@ mod tests {
 
     #[test]
     fn test_relation_to_not_found() {
-        let errors = validate_relation_refs("entity-1", "nonexistent", "relates_to", &[], &mock_lookup);
+        let errors = validate_relation_refs("entity-1", "nonexistent", "related_to", &[], &mock_lookup);
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0].code, ErrorCode::EntityNotFound));
         assert_eq!(errors[0].field_path, "to_id");
@@ -208,20 +229,20 @@ mod tests {
 
     #[test]
     fn test_relation_both_not_found() {
-        let errors = validate_relation_refs("nope1", "nope2", "relates_to", &[], &mock_lookup);
+        let errors = validate_relation_refs("nope1", "nope2", "related_to", &[], &mock_lookup);
         assert_eq!(errors.len(), 2);
     }
 
     #[test]
     fn test_relation_from_deleted() {
-        let errors = validate_relation_refs("deleted-entity", "entity-2", "relates_to", &[], &mock_lookup);
+        let errors = validate_relation_refs("deleted-entity", "entity-2", "related_to", &[], &mock_lookup);
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0].code, ErrorCode::EntityDeleted));
     }
 
     #[test]
     fn test_relation_to_deleted() {
-        let errors = validate_relation_refs("entity-1", "deleted-entity", "relates_to", &[], &mock_lookup);
+        let errors = validate_relation_refs("entity-1", "deleted-entity", "related_to", &[], &mock_lookup);
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0].code, ErrorCode::EntityDeleted));
     }
@@ -242,10 +263,58 @@ mod tests {
     }
 
     #[test]
+    fn test_canonical_relation_type_accepted() {
+        // "supports" is one of the 22 canonical types and should be accepted
+        let errors = validate_relation_refs("entity-1", "entity-2", "supports", &[], &mock_lookup);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_unknown_relation_type_rejected() {
+        // "foo_bar" is not a canonical type and doesn't start with "custom:"
+        let errors = validate_relation_refs("entity-1", "entity-2", "foo_bar", &[], &mock_lookup);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0].code, ErrorCode::UnknownRelationType));
+        assert!(errors[0].message.contains("foo_bar"));
+        assert!(errors[0].message.contains("canonical types"));
+    }
+
+    #[test]
+    fn test_relates_to_typo_rejected() {
+        // "relates_to" is a common typo for the canonical "related_to"
+        let errors = validate_relation_refs("entity-1", "entity-2", "relates_to", &[], &mock_lookup);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0].code, ErrorCode::UnknownRelationType));
+    }
+
+    #[test]
+    fn test_custom_relation_type_goes_through_approval_check() {
+        // "custom:sponsors" should go through custom type approval, not canonical check
+        let approved = vec!["custom:sponsors".to_string()];
+        let errors = validate_relation_refs("entity-1", "entity-2", "custom:sponsors", &approved, &mock_lookup);
+        assert!(errors.is_empty());
+
+        // Unapproved custom type should fail with RelationTypeNotApproved, not UnknownRelationType
+        let errors = validate_relation_refs("entity-1", "entity-2", "custom:sponsors", &[], &mock_lookup);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0].code, ErrorCode::RelationTypeNotApproved));
+    }
+
+    #[test]
     fn test_builtin_relation_type_not_checked_against_custom_list() {
         let approved = vec![];
-        let errors = validate_relation_refs("entity-1", "entity-2", "relates_to", &approved, &mock_lookup);
+        let errors = validate_relation_refs("entity-1", "entity-2", "related_to", &approved, &mock_lookup);
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_all_canonical_types_accepted() {
+        let canonical = &GargoyleConfig::global().canonical_relation_types;
+        for relation_type in canonical {
+            let errors = validate_relation_refs("entity-1", "entity-2", relation_type, &[], &mock_lookup);
+            let type_errors: Vec<_> = errors.iter().filter(|e| e.field_path == "relation_type").collect();
+            assert!(type_errors.is_empty(), "Canonical type '{}' should be accepted", relation_type);
+        }
     }
 
     // --- validate_entity_refs tests ---
@@ -257,18 +326,21 @@ mod tests {
                 field_type: FieldType::EntityRef("metric".to_string()),
                 required: false,
                 description: None,
+                added_in_version: None,
             },
             FieldDef {
                 name: "linked_experiment".to_string(),
                 field_type: FieldType::EntityRef("experiment".to_string()),
                 required: false,
                 description: None,
+                added_in_version: None,
             },
             FieldDef {
                 name: "name".to_string(),
                 field_type: FieldType::String,
                 required: true,
                 description: None,
+                added_in_version: None,
             },
         ]
     }

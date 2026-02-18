@@ -47,7 +47,7 @@ fn test_single_update_via_apply_patch_set() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
 
     let result = apply_patch_set(&conn, &patch_set);
@@ -94,13 +94,14 @@ fn test_stale_timestamp_always_rejected() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
 
     let result = apply_patch_set(&conn, &patch_set);
     assert!(result.is_err(), "Stale timestamp should be rejected");
     match result.unwrap_err() {
         GargoyleError::LockConflict { .. } => {}
+        GargoyleError::Validation(ve) if matches!(ve.code, gargoyle_lib::error::ErrorCode::LockConflict) => {}
         other => panic!("Expected LockConflict, got: {:?}", other),
     }
 
@@ -146,7 +147,7 @@ fn test_100_stale_timestamps_always_rejected() {
                 priority: None,
                 reason: None,
             })],
-            run_id: None,
+            run_id: String::new(),
         };
 
         let result = apply_patch_set(&conn, &patch_set);
@@ -157,6 +158,7 @@ fn test_100_stale_timestamps_always_rejected() {
         );
         match result.unwrap_err() {
             GargoyleError::LockConflict { .. } => {}
+            GargoyleError::Validation(ve) if matches!(ve.code, gargoyle_lib::error::ErrorCode::LockConflict) => {}
             other => panic!(
                 "Iteration {}: expected LockConflict, got: {:?}",
                 i, other
@@ -211,7 +213,7 @@ fn test_update_deleted_entity_always_fails() {
                 priority: None,
                 reason: None,
             })],
-            run_id: None,
+            run_id: String::new(),
         };
 
         let result = apply_patch_set(&conn, &patch_set);
@@ -265,7 +267,7 @@ fn test_200_sequential_updates_all_succeed() {
                 priority: None,
                 reason: None,
             })],
-            run_id: None,
+            run_id: String::new(),
         };
 
         let result = apply_patch_set(&conn, &patch_set);
@@ -342,7 +344,7 @@ fn test_100_simulated_concurrent_writes_no_silent_overwrite() {
                 priority: None,
                 reason: None,
             })],
-            run_id: None,
+            run_id: String::new(),
         };
 
         let result = apply_patch_set(&conn, &ps);

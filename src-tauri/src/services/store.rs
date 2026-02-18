@@ -366,7 +366,7 @@ impl StoreService {
     ) -> Result<PatchResult> {
         let patch_set = PatchSet {
             ops: vec![PatchOp::CreateEntity(payload)],
-            run_id: None,
+            run_id: uuid::Uuid::new_v4().to_string(),
         };
         patch::apply_patch_set(conn, &patch_set)
     }
@@ -378,7 +378,7 @@ impl StoreService {
     ) -> Result<PatchResult> {
         let patch_set = PatchSet {
             ops: vec![PatchOp::UpdateEntity(payload)],
-            run_id: None,
+            run_id: uuid::Uuid::new_v4().to_string(),
         };
         patch::apply_patch_set(conn, &patch_set)
     }
@@ -390,7 +390,7 @@ impl StoreService {
     ) -> Result<PatchResult> {
         let patch_set = PatchSet {
             ops: vec![PatchOp::CreateRelation(payload)],
-            run_id: None,
+            run_id: uuid::Uuid::new_v4().to_string(),
         };
         patch::apply_patch_set(conn, &patch_set)
     }
@@ -402,7 +402,7 @@ impl StoreService {
     ) -> Result<PatchResult> {
         let patch_set = PatchSet {
             ops: vec![PatchOp::CreateClaim(payload)],
-            run_id: None,
+            run_id: uuid::Uuid::new_v4().to_string(),
         };
         patch::apply_patch_set(conn, &patch_set)
     }
@@ -413,6 +413,7 @@ mod tests {
     use super::*;
     use crate::db::connection::create_memory_connection;
     use crate::db::migrations::run_migrations;
+    use crate::error::ErrorCode;
     use serde_json::json;
 
     /// Create a fresh in-memory database with all migrations applied.
@@ -485,8 +486,9 @@ mod tests {
                 status: Some("active".to_string()),
                 category: None,
                 priority: None,
+                reason: None,
             })],
-            run_id: None,
+            run_id: uuid::Uuid::new_v4().to_string(),
         };
 
         let result = StoreService::apply_patch_set(&conn, &patch_set).unwrap();
@@ -511,19 +513,21 @@ mod tests {
                     status: None,
                     category: None,
                     priority: None,
+                    reason: None,
                 }),
                 PatchOp::CreateEntity(CreateEntityPayload {
                     entity_type: "experiment".to_string(),
                     title: "Experiment B".to_string(),
                     source: "agent".to_string(),
-                    canonical_fields: json!({}),
+                    canonical_fields: json!({"hypothesis": "Test hypothesis", "primary_metric": "conversion_rate"}),
                     body_md: None,
                     status: None,
                     category: None,
                     priority: None,
+                    reason: None,
                 }),
             ],
-            run_id: None,
+            run_id: uuid::Uuid::new_v4().to_string(),
         };
 
         let result = StoreService::apply_patch_set(&conn, &patch_set).unwrap();
@@ -725,13 +729,13 @@ mod tests {
         let conn = test_db();
         insert_test_entity(&conn, "a", "metric", "A", "manual", "{}");
         insert_test_entity(&conn, "b", "experiment", "B", "manual", "{}");
-        insert_test_relation(&conn, "rel-1", "a", "b", "relates_to");
+        insert_test_relation(&conn, "rel-1", "a", "b", "related_to");
 
         let rels = StoreService::get_relations(&conn, "a").unwrap();
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].from_id, "a");
         assert_eq!(rels[0].to_id, "b");
-        assert_eq!(rels[0].relation_type, "relates_to");
+        assert_eq!(rels[0].relation_type, "related_to");
     }
 
     #[test]
@@ -739,7 +743,7 @@ mod tests {
         let conn = test_db();
         insert_test_entity(&conn, "a", "metric", "A", "manual", "{}");
         insert_test_entity(&conn, "b", "experiment", "B", "manual", "{}");
-        insert_test_relation(&conn, "rel-1", "a", "b", "relates_to");
+        insert_test_relation(&conn, "rel-1", "a", "b", "related_to");
 
         // Query from B's perspective -- should still find the relation
         let rels = StoreService::get_relations(&conn, "b").unwrap();
@@ -754,7 +758,7 @@ mod tests {
         insert_test_entity(&conn, "a", "metric", "A", "manual", "{}");
         insert_test_entity(&conn, "b", "experiment", "B", "manual", "{}");
         insert_test_entity(&conn, "c", "result", "C", "manual", "{}");
-        insert_test_relation(&conn, "rel-1", "a", "b", "relates_to");
+        insert_test_relation(&conn, "rel-1", "a", "b", "related_to");
         insert_test_relation(&conn, "rel-2", "c", "a", "derived_from");
 
         // A is from_id in rel-1, to_id in rel-2
@@ -896,6 +900,7 @@ mod tests {
             status: Some("active".to_string()),
             category: Some("growth".to_string()),
             priority: Some(2),
+            reason: None,
         };
 
         let result = StoreService::create_entity(&conn, payload).unwrap();
@@ -974,7 +979,18 @@ mod tests {
 
         let result = StoreService::update_entity(&conn, payload);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), GargoyleError::LockConflict { .. }));
+        // The validation pipeline catches lock conflicts before execution,
+        // returning GargoyleError::Validation with ErrorCode::LockConflict
+        // rather than the legacy GargoyleError::LockConflict variant.
+        match result.unwrap_err() {
+            GargoyleError::Validation(ve) => {
+                assert!(matches!(ve.code, ErrorCode::LockConflict));
+            }
+            GargoyleError::LockConflict { .. } => {
+                // Also acceptable if execute_update_entity's own check fires
+            }
+            other => panic!("Expected LockConflict error, got: {:?}", other),
+        }
     }
 
     // ========================================================================
@@ -990,10 +1006,11 @@ mod tests {
         let payload = CreateRelationPayload {
             from_id: "from-ent".to_string(),
             to_id: "to-ent".to_string(),
-            relation_type: "relates_to".to_string(),
+            relation_type: "related_to".to_string(),
             weight: Some(0.8),
             confidence: Some(0.9),
             provenance_run_id: None,
+            reason: None,
         };
 
         let result = StoreService::create_relation(&conn, payload).unwrap();
@@ -1004,8 +1021,8 @@ mod tests {
         let rels = StoreService::get_relations(&conn, "from-ent").unwrap();
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].id, *rel_id);
-        assert_eq!(rels[0].relation_type, "relates_to");
-        assert!((rels[0].weight - 0.8).abs() < f64::EPSILON);
+        assert_eq!(rels[0].relation_type, "related_to");
+        assert!((rels[0].weight.unwrap() - 0.8).abs() < f64::EPSILON);
         assert!((rels[0].confidence.unwrap() - 0.9).abs() < f64::EPSILON);
     }
 
@@ -1025,6 +1042,7 @@ mod tests {
             confidence: 0.85,
             evidence_entity_id: "evidence".to_string(),
             provenance_run_id: None,
+            evidence_entity_ids: None,
         };
 
         let result = StoreService::create_claim(&conn, payload).unwrap();
@@ -1131,8 +1149,9 @@ mod tests {
                 status: None,
                 category: None,
                 priority: None,
+                reason: None,
             })],
-            run_id: Some("workflow-run-1".to_string()),
+            run_id: "workflow-run-1".to_string(),
         };
 
         let result = StoreService::apply_patch_set(&conn, &patch_set).unwrap();

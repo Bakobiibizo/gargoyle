@@ -2,9 +2,9 @@
 
 This document defines the implementation plan for stress-testing Gargoyle's architecture using the Analytics domain as a vertical slice. The goal is to prove or break every load-bearing architectural decision before scaling horizontally.
 
-> **Scope:** Originally 3 entity types (`metric`, `experiment`, `result`) and 3 templates (`analytics-metric-tree`, `analytics-experiment-plan`, `analytics-anomaly-investigation`). Now expanded to 22 entity types and 23 enriched templates across analytics, marketing, development, organizing, and content categories. Tests cover every infrastructure component: patch protocol, schema validation, optimistic locking, dedup pipeline, embedding search, claim grounding, status transitions, and relation integrity.
+> **Scope:** Originally 3 entity types (`metric`, `experiment`, `result`) and 3 templates (`analytics-metric-tree`, `analytics-experiment-plan`, `analytics-anomaly-investigation`). Now expanded to 27 entity types and 23 enriched templates across analytics, marketing, development, organizing, and content categories. Tests cover every infrastructure component: patch protocol, schema validation, optimistic locking, dedup pipeline, embedding search, claim grounding, status transitions, and relation integrity.
 
-> **Philosophy:** This is not a test suite for correctness. It's a harness for discovering where the architecture buckles under realistic abuse. Every test scenario simulates a plausible user or agent behavior that could expose a design flaw. If the slice survives, the remaining 25 entity types and 95 templates are horizontal scaling — not new risk.
+> **Philosophy:** This is not a test suite for correctness. It's a harness for discovering where the architecture buckles under realistic abuse. Every test scenario simulates a plausible user or agent behavior that could expose a design flaw. If the slice survives, the remaining entity types and 95 templates are horizontal scaling — not new risk.
 
 ---
 

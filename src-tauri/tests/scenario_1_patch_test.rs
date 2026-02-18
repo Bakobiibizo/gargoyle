@@ -29,12 +29,9 @@ use gargoyle_lib::validation::status_validator::validate_status_transition;
 /// Returns a mock lookup matching the setup for test 1c.
 /// "metric-ref" -> metric, "experiment-ref" -> experiment
 fn lookup_1c(id: &str) -> Option<(String, Option<String>)> {
-    // The actual test will create a metric and store its ID.
-    // Since we can't know the UUID ahead of time, we use a separate
-    // validation test with a known mock instead.
     match id {
         "metric-entity" => Some(("metric".to_string(), None)),
-        "experiment-entity" => Some(("experiment".to_string(), None)),
+        "project-entity" => Some(("project".to_string(), None)),
         _ => None,
     }
 }
@@ -88,8 +85,9 @@ fn test_1a_valid_create_entity_metric() {
             status: None,
             category: None,
             priority: None,
+            reason: None,
         })],
-        run_id: None,
+        run_id: "test-run".to_string(),
     };
 
     let result = apply_patch_set(&conn, &patch_set).expect("create_entity should succeed");
@@ -136,7 +134,7 @@ fn test_1a_valid_canonical_fields_pass_schema_validation() {
 #[test]
 fn test_1b_invalid_create_entity_bad_status() {
     // "completed" is NOT valid for metric (valid: active, paused, deprecated, archived)
-    let errors = validate_status_transition(
+    let result = validate_status_transition(
         "metric",
         None, // null -> "completed"
         "completed",
@@ -144,16 +142,16 @@ fn test_1b_invalid_create_entity_bad_status() {
     );
 
     assert!(
-        !errors.is_empty(),
+        !result.errors.is_empty(),
         "Should reject invalid status 'completed' for metric"
     );
     assert!(
-        errors.iter().any(|e| matches!(e.code, ErrorCode::InvalidStatusTransition)),
+        result.errors.iter().any(|e| matches!(e.code, ErrorCode::InvalidStatusTransition)),
         "Should have InvalidStatusTransition error, got: {:?}",
-        errors
+        result.errors
     );
 
-    let status_error = errors
+    let status_error = result.errors
         .iter()
         .find(|e| matches!(e.code, ErrorCode::InvalidStatusTransition))
         .unwrap();
@@ -177,7 +175,7 @@ fn test_1b_invalid_create_entity_bad_status() {
 #[test]
 fn test_1b_invalid_status_for_experiment() {
     // "completed" is not valid for experiment either (valid: draft, running, concluded, archived)
-    let errors = validate_status_transition(
+    let result = validate_status_transition(
         "experiment",
         None,
         "completed",
@@ -185,14 +183,14 @@ fn test_1b_invalid_status_for_experiment() {
     );
 
     assert!(
-        !errors.is_empty(),
+        !result.errors.is_empty(),
         "Should reject 'completed' for experiment"
     );
-    assert!(matches!(errors[0].code, ErrorCode::InvalidStatusTransition));
-    assert!(errors[0].message.contains("draft"));
-    assert!(errors[0].message.contains("running"));
-    assert!(errors[0].message.contains("concluded"));
-    assert!(errors[0].message.contains("archived"));
+    assert!(matches!(result.errors[0].code, ErrorCode::InvalidStatusTransition));
+    assert!(result.errors[0].message.contains("draft"));
+    assert!(result.errors[0].message.contains("running"));
+    assert!(result.errors[0].message.contains("concluded"));
+    assert!(result.errors[0].message.contains("archived"));
 }
 
 // =============================================================================
@@ -201,22 +199,21 @@ fn test_1b_invalid_status_for_experiment() {
 
 #[test]
 fn test_1c_invalid_create_entity_ref_type_mismatch() {
-    // source_experiment_id is EntityRef("experiment") -- pointing to a metric should fail.
+    // project_id on task is EntityRef("project") -- pointing to a metric should fail.
     let registry = SchemaRegistry::new();
-    let experiment_field_defs = registry
-        .get_schema("experiment", 1)
-        .expect("experiment v1 schema should exist");
+    let task_field_defs = registry
+        .get_schema("task", 1)
+        .expect("task v1 schema should exist");
 
     let canonical_fields = serde_json::json!({
-        "hypothesis": "Testing price changes",
-        "source_experiment_id": "metric-entity"
+        "project_id": "metric-entity"
     });
 
     // The mock lookup returns "metric-entity" as type "metric",
-    // but source_experiment_id expects type "experiment"
+    // but project_id expects type "project"
     let errors = validate_entity_refs(
         &canonical_fields,
-        &experiment_field_defs,
+        &task_field_defs,
         &lookup_1c,
     );
 
@@ -240,8 +237,8 @@ fn test_1c_invalid_create_entity_ref_type_mismatch() {
         ref_error.message
     );
     assert!(
-        ref_error.message.contains("experiment"),
-        "Error should mention expected type 'experiment': {}",
+        ref_error.message.contains("project"),
+        "Error should mention expected type 'project': {}",
         ref_error.message
     );
 }
@@ -249,19 +246,19 @@ fn test_1c_invalid_create_entity_ref_type_mismatch() {
 #[test]
 fn test_1c_entity_ref_correct_type_passes() {
     let registry = SchemaRegistry::new();
-    let experiment_field_defs = registry
-        .get_schema("experiment", 1)
-        .expect("experiment v1 schema should exist");
+    let task_field_defs = registry
+        .get_schema("task", 1)
+        .expect("task v1 schema should exist");
 
     let canonical_fields = serde_json::json!({
-        "hypothesis": "Follow-up test",
-        "source_experiment_id": "experiment-entity"
+        "assignee_id": "someone",
+        "project_id": "project-entity"
     });
 
-    // experiment-entity is type "experiment" which matches EntityRef("experiment")
+    // project-entity is type "project" which matches EntityRef("project")
     let errors = validate_entity_refs(
         &canonical_fields,
-        &experiment_field_defs,
+        &task_field_defs,
         &lookup_1c,
     );
 
@@ -376,8 +373,9 @@ fn test_1e_valid_create_relation() {
             status: None,
             category: None,
             priority: None,
+            reason: None,
         })],
-        run_id: None,
+        run_id: "test-run".to_string(),
     };
     let metric_result = apply_patch_set(&conn, &create_metric).unwrap();
     let metric_id = metric_result.applied[0].entity_id.as_ref().unwrap().clone();
@@ -388,13 +386,14 @@ fn test_1e_valid_create_relation() {
             entity_type: "experiment".to_string(),
             title: "Pricing Test".to_string(),
             source: "template".to_string(),
-            canonical_fields: serde_json::json!({"hypothesis": "Higher prices increase revenue"}),
+            canonical_fields: serde_json::json!({"hypothesis": "Higher prices increase revenue", "primary_metric": "MRR"}),
             body_md: None,
             status: None,
             category: None,
             priority: None,
+            reason: None,
         })],
-        run_id: None,
+        run_id: "test-run".to_string(),
     };
     let experiment_result = apply_patch_set(&conn, &create_experiment).unwrap();
     let experiment_id = experiment_result.applied[0].entity_id.as_ref().unwrap().clone();
@@ -408,8 +407,9 @@ fn test_1e_valid_create_relation() {
             weight: None,
             confidence: None,
             provenance_run_id: None,
+            reason: None,
         })],
-        run_id: None,
+        run_id: "test-run".to_string(),
     };
     let relation_result = apply_patch_set(&conn, &create_relation)
         .expect("create_relation should succeed");

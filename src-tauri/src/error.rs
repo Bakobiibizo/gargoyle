@@ -49,6 +49,7 @@ pub enum ErrorCode {
     LockConflict,
     InvalidStatusTransition,
     RelationTypeNotApproved,
+    UnknownRelationType,
     UngroundedClaim,
     SchemaVersionMismatch,
 }

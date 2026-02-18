@@ -164,7 +164,7 @@ const TEMPLATE_PARAMS: Record<string, { key: string; label: string; placeholder:
     { key: 'metric_id', label: 'Metric entity ID', placeholder: 'UUID of the metric to experiment on' },
     { key: 'hypothesis', label: 'Hypothesis', placeholder: 'If we ... then ...' },
   ],
-  'analytics-anomaly-investigation': [
+  'analytics-anomaly-detection-investigation': [
     { key: 'experiment_id', label: 'Experiment entity ID', placeholder: 'UUID of the experiment' },
     { key: 'anomaly_description', label: 'Anomaly description', placeholder: 'Describe the anomaly observed' },
   ],

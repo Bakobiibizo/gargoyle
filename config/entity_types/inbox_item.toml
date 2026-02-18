@@ -1,0 +1,26 @@
+version = 1
+statuses = ["unprocessed", "triaged", "archived"]
+
+[[fields]]
+name = "source_text"
+type = "String"
+required = true
+description = "Original source text of the inbox item"
+
+[[fields]]
+name = "source_url"
+type = "String"
+required = false
+description = "URL source of the inbox item"
+
+[[fields]]
+name = "suggested_type"
+type = "String"
+required = false
+description = "Suggested entity type for the inbox item"
+
+[[fields]]
+name = "suggested_title"
+type = "String"
+required = false
+description = "Suggested title for the inbox item"

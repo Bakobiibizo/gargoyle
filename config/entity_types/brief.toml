@@ -1,0 +1,26 @@
+version = 1
+statuses = ["draft", "approved", "in_progress", "completed"]
+
+[[fields]]
+name = "brief_type"
+type = { Enum = ["creative", "campaign", "product", "event"] }
+required = false
+description = "Type of brief"
+
+[[fields]]
+name = "deadline"
+type = "String"
+required = false
+description = "Deadline for the brief"
+
+[[fields]]
+name = "stakeholders"
+type = "String"
+required = false
+description = "Stakeholders for this brief"
+
+[[fields]]
+name = "deliverables"
+type = "String"
+required = false
+description = "Expected deliverables"

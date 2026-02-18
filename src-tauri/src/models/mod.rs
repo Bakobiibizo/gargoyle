@@ -8,3 +8,4 @@ pub mod operational_context;
 pub mod dedup;
 pub mod custom_relation_type;
 pub mod patch;
+pub mod chat;

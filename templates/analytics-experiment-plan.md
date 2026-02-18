@@ -1,4 +1,10 @@
+Template Key: analytics-experiment-plan
 Category: analytics
+Version: 1.0
+Maturity: workflow
+Produces Entities: experiment
+Produces Relations: tests
+Prerequisite: metric >= 1 | suggested: analytics-metric-tree | Experiments must target at least one metric to measure
 Response Format: mixed
 
 ---

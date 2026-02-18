@@ -1,0 +1,32 @@
+version = 1
+statuses = ["draft", "approved", "active", "exhausted", "closed"]
+
+[[fields]]
+name = "total_amount"
+type = "Number"
+required = false
+description = "Total budget amount"
+
+[[fields]]
+name = "currency"
+type = "String"
+required = false
+description = "Currency of the budget"
+
+[[fields]]
+name = "period"
+type = "String"
+required = false
+description = "Budget period"
+
+[[fields]]
+name = "allocated"
+type = "Number"
+required = false
+description = "Amount allocated from the budget"
+
+[[fields]]
+name = "spent"
+type = "Number"
+required = false
+description = "Amount spent from the budget"

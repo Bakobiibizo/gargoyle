@@ -55,7 +55,7 @@ fn pick<'a>(options: &'a [&'a str], index: usize) -> &'a str {
     options[index % options.len()]
 }
 
-fn canonical_fields_for_type(entity_type: &str, index: usize) -> serde_json::Value {
+fn canonical_fields_for_type(entity_type: &str, index: usize, person_ids: &[String]) -> serde_json::Value {
     match entity_type {
         "metric" => {
             let trend = pick(&["up", "down", "flat"], index);
@@ -68,66 +68,56 @@ fn canonical_fields_for_type(entity_type: &str, index: usize) -> serde_json::Val
         }
         "experiment" => json!({
             "hypothesis": format!("Testing hypothesis #{}", index),
-            "funnel_position": "checkout"
+            "funnel_position": "checkout",
+            "primary_metric": "conversion_rate"
         }),
         "result" => json!({
-            "findings": format!("Significant improvement in area {}", index),
-            "methodology": "A/B test",
-            "confidence_level": 0.5 + (index % 50) as f64 / 100.0
+            "outcome": format!("Significant improvement in area {}", index),
+            "confidence_level": "high"
         }),
         "task" => {
             let effort = pick(&["S", "M", "L"], index);
             json!({
-                "assignee": format!("person-{}", index % 20),
                 "effort_estimate": effort,
                 "acceptance_criteria": "Tests pass"
             })
         }
         "project" => json!({
-            "owner_id": format!("lead-{}", index % 10),
-            "objective": format!("Launch initiative {}", index),
-            "success_criteria": "Revenue up 10%",
-            "timeline": "Q1 2026"
+            "timeline": "2026-03-01",
+            "objective": "Revenue up 10%"
         }),
         "decision" => json!({
-            "owner_id": format!("decider-{}", index % 5),
+            "owner_id": person_ids[index % person_ids.len()],
             "rationale": format!("Based on data analysis #{}", index),
-            "decided_at": "2026-01-15"
+            "decided_at": "2026-01-15",
+            "revisit_triggers": "market shift, new data"
         }),
         "person" => {
             let role = pick(&["Engineer", "Designer", "PM", "Data Analyst"], index);
-            let team = pick(&["Platform", "Growth", "Product"], index);
+            let department = pick(&["Platform", "Growth", "Product"], index);
             json!({
                 "email": format!("person{}@example.com", index),
                 "role": role,
-                "team": team,
-                "external": false
+                "department": department,
+                "is_external": false
             })
         }
         "note" => json!({
-            "context": format!("Meeting notes from session {}", index),
-            "tags": "planning,strategy"
+            "tags": "planning, strategy"
         }),
-        "session" => {
-            let session_type = pick(&["planning", "review", "standup"], index);
-            json!({
-                "session_type": session_type,
-                "participants": "Alice, Bob, Charlie",
-                "agenda": format!("Sprint {} planning", index)
-            })
-        }
+        "session" => json!({
+            "session_type": "planning"
+        }),
         "campaign" => {
-            let channel = pick(&["email", "paid_social", "paid_search"], index);
+            let channel = pick(&["email", "paid_social", "paid_search", "organic", "events", "partnerships"], index);
             json!({
-                "objective": format!("Increase signups batch {}", index),
-                "budget": 10000.0 + (index as f64) * 100.0,
+                "objective": format!("Campaign goal #{}", index),
                 "channel": channel
             })
         }
         "audience" => json!({
             "segment_criteria": format!("Enterprise segment {}", index),
-            "estimated_size": 50000.0 + (index as f64) * 1000.0,
-            "channels": "email,linkedin"
+            "estimated_size": 10000.0 + (index as f64) * 100.0
         }),
         "competitor" => json!({
             "website": format!("https://competitor{}.com", index),
@@ -138,7 +128,6 @@ fn canonical_fields_for_type(entity_type: &str, index: usize) -> serde_json::Val
             let channel_type = pick(&["email", "social", "search"], index);
             json!({
                 "channel_type": channel_type,
-                "cost_model": "CPC",
                 "budget_allocation": 5000.0 + (index as f64) * 50.0
             })
         }
@@ -146,7 +135,6 @@ fn canonical_fields_for_type(entity_type: &str, index: usize) -> serde_json::Val
             let spec_type = pick(&["technical", "product"], index);
             json!({
                 "spec_type": spec_type,
-                "version": format!("{}.0", 1 + index % 5),
                 "author": format!("Author {}", index % 10)
             })
         }
@@ -167,8 +155,7 @@ fn canonical_fields_for_type(entity_type: &str, index: usize) -> serde_json::Val
             let playbook_type = pick(&["sales", "marketing"], index);
             json!({
                 "playbook_type": playbook_type,
-                "trigger_conditions": "Lead qualifies",
-                "expected_outcome": format!("Close deal variant {}", index)
+                "trigger_conditions": "Lead qualifies"
             })
         }
         "taxonomy" => {
@@ -178,22 +165,15 @@ fn canonical_fields_for_type(entity_type: &str, index: usize) -> serde_json::Val
                 "level": (index % 5) as f64
             })
         }
-        "backlog" => {
-            let effort = pick(&["S", "M", "L"], index);
-            json!({
-                "priority_score": 1.0 + (index % 100) as f64,
-                "effort": effort,
-                "requester": format!("Team {}", index % 8)
-            })
-        }
-        "brief" => {
-            let brief_type = pick(&["creative", "campaign"], index);
-            json!({
-                "brief_type": brief_type,
-                "deadline": "2026-06-01",
-                "stakeholders": "Marketing, Design"
-            })
-        }
+        "backlog" => json!({
+            "priority_score": 1.0 + (index % 100) as f64,
+            "effort": pick(&["S", "M", "L"], index)
+        }),
+        "brief" => json!({
+            "brief_type": pick(&["creative", "campaign", "product", "event"], index),
+            "deadline": "2026-06-01",
+            "stakeholders": "Marketing, Design"
+        }),
         "event" => {
             let event_type = pick(&["conference", "webinar"], index);
             json!({
@@ -207,7 +187,28 @@ fn canonical_fields_for_type(entity_type: &str, index: usize) -> serde_json::Val
             json!({
                 "policy_type": policy_type,
                 "effective_date": "2026-01-01",
-                "owner": format!("Legal team {}", index % 3)
+                "review_date": "2026-04-01"
+            })
+        }
+        "inbox_item" => json!({
+            "source_text": format!("Inbox item text {}", index)
+        }),
+        "artifact_type" => json!({
+            "artifact_kind": "attachment",
+            "uri_or_path": format!("/artifacts/file_{}.pdf", index)
+        }),
+        "concept" => json!({
+            "definition": format!("Concept definition {}", index)
+        }),
+        "commitment" => json!({
+            "owner_id": person_ids[index % person_ids.len()],
+            "deadline": "2026-06-01"
+        }),
+        "issue" => {
+            let severity = pick(&["critical", "high", "medium", "low"], index);
+            json!({
+                "severity": severity,
+                "affected_area": format!("Area {}", index % 10)
             })
         }
         _ => json!({}),
@@ -239,6 +240,11 @@ fn title_prefix_for_type(entity_type: &str) -> &str {
         "brief" => "Creative Brief",
         "event" => "Industry Event",
         "policy" => "Security Policy",
+        "inbox_item" => "Inbox Item",
+        "artifact_type" => "Artifact",
+        "concept" => "Concept",
+        "commitment" => "Commitment",
+        "issue" => "Issue",
         _ => "Entity",
     }
 }
@@ -283,7 +289,8 @@ fn setup_populated_db() -> Connection {
                 "This is {} number {} for performance testing. It covers analysis, planning, and execution phases.",
                 entity_type, i
             );
-            let cf = canonical_fields_for_type(entity_type, i);
+            let dummy_person_ids: Vec<String> = (0..20).map(|j| format!("perf-person-{}", j)).collect();
+            let cf = canonical_fields_for_type(entity_type, i, &dummy_person_ids);
             let cf_str = serde_json::to_string(&cf).unwrap();
 
             conn.execute(
@@ -645,6 +652,24 @@ fn test_perf_batch_insert_1000() {
     let conn = create_memory_connection().expect("Failed to create in-memory connection");
     run_migrations(&conn).expect("Failed to run migrations");
 
+    // Pre-create person entities so EntityRef fields can reference them
+    let person_ids: Vec<String> = (0..20)
+        .map(|i| {
+            let id = format!("person-{}", i);
+            let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+            conn.execute(
+                "INSERT INTO entities (id, entity_type, title, body_md, source, canonical_fields, _schema_version, created_at, updated_at, status) \
+                 VALUES (?1, 'person', ?2, '', 'manual', '{\"role\": \"Engineer\"}', 1, ?3, ?3, 'active')",
+                rusqlite::params![id, format!("Person {}", i), now],
+            ).expect("Failed to insert person");
+            conn.execute(
+                "INSERT INTO entities_fts(rowid, title, body_md) SELECT rowid, title, body_md FROM entities WHERE id = ?1",
+                rusqlite::params![id],
+            ).expect("Failed to insert person into FTS");
+            id
+        })
+        .collect();
+
     let batch_size = 1000;
 
     // Build a PatchSet with 1000 CreateEntity ops
@@ -653,7 +678,12 @@ fn test_perf_batch_insert_1000() {
         let type_idx = i % ALL_ENTITY_TYPES.len();
         let entity_type = ALL_ENTITY_TYPES[type_idx];
         let status = initial_status_for_type(entity_type);
-        let cf = canonical_fields_for_type(entity_type, i);
+        let cf = canonical_fields_for_type(entity_type, i, &person_ids);
+        // Types with no valid statuses should pass None
+        let status_opt = match entity_type {
+            "note" | "artifact_type" | "concept" => None,
+            _ => Some(status.to_string()),
+        };
 
         ops.push(PatchOp::CreateEntity(CreateEntityPayload {
             entity_type: entity_type.to_string(),
@@ -661,15 +691,16 @@ fn test_perf_batch_insert_1000() {
             source: "manual".to_string(),
             canonical_fields: cf,
             body_md: Some(format!("Batch insert entity {} for throughput test", i)),
-            status: Some(status.to_string()),
+            status: status_opt,
             category: None,
             priority: None,
+            reason: None,
         }));
     }
 
     let patch_set = PatchSet {
         ops,
-        run_id: None,
+        run_id: String::new(),
     };
 
     let start = Instant::now();
@@ -714,7 +745,8 @@ fn test_perf_batch_insert_1000() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(count, batch_size as i64);
+    // Count includes pre-created person entities (20)
+    assert_eq!(count, batch_size as i64 + person_ids.len() as i64);
 }
 
 #[test]

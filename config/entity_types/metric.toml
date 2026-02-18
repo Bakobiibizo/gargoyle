@@ -1,0 +1,26 @@
+version = 1
+statuses = ["active", "paused", "deprecated", "archived"]
+
+[[fields]]
+name = "current_value"
+type = "Number"
+required = false
+description = "Current measured value of this metric"
+
+[[fields]]
+name = "target_value"
+type = "Number"
+required = false
+description = "Target value for this metric"
+
+[[fields]]
+name = "trend"
+type = { Enum = ["up", "down", "flat"] }
+required = false
+description = "Current trend direction"
+
+[[fields]]
+name = "data_source"
+type = "String"
+required = false
+description = "Where this metric data comes from"

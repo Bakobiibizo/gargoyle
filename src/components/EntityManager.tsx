@@ -243,6 +243,11 @@ const TYPE_COLORS: Record<string, string> = {
   budget: '#eab308',
   vendor: '#84cc16',
   playbook: '#d946ef',
+  inbox_item: '#fb923c',
+  artifact_type: '#94a3b8',
+  concept: '#2dd4bf',
+  commitment: '#f43f5e',
+  issue: '#dc2626',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -276,13 +281,24 @@ const STATUS_COLORS: Record<string, string> = {
   validated: '#22d3ee',
   superseded: '#f97316',
   inactive: '#6b7280',
+  unprocessed: '#94a3b8',
+  triaged: '#38bdf8',
+  on_track: '#4ade80',
+  at_risk: '#fbbf24',
+  fulfilled: '#22c55e',
+  broken: '#ef4444',
+  investigating: '#a78bfa',
+  mitigated: '#38bdf8',
+  resolved: '#22c55e',
+  wont_fix: '#6b7280',
 };
 
 const ENTITY_TYPES = [
-  'audience', 'backlog', 'brief', 'budget', 'campaign', 'channel',
-  'competitor', 'decision', 'event', 'experiment', 'metric', 'note',
-  'person', 'playbook', 'policy', 'project', 'result', 'session',
-  'spec', 'task', 'taxonomy', 'vendor',
+  'artifact_type', 'audience', 'backlog', 'brief', 'budget', 'campaign',
+  'channel', 'commitment', 'competitor', 'concept', 'decision', 'event',
+  'experiment', 'inbox_item', 'issue', 'metric', 'note', 'person',
+  'playbook', 'policy', 'project', 'result', 'session', 'spec', 'task',
+  'taxonomy', 'vendor',
 ];
 
 const STATUS_OPTIONS: Record<string, string[]> = {
@@ -308,6 +324,11 @@ const STATUS_OPTIONS: Record<string, string[]> = {
   brief: ['draft', 'review', 'approved', 'archived'],
   event: ['proposed', 'confirmed', 'in_progress', 'completed', 'cancelled'],
   policy: ['draft', 'active', 'under_review', 'deprecated'],
+  inbox_item: ['unprocessed', 'triaged', 'archived'],
+  artifact_type: [],
+  concept: [],
+  commitment: ['on_track', 'at_risk', 'blocked', 'fulfilled', 'broken'],
+  issue: ['open', 'investigating', 'mitigated', 'resolved', 'wont_fix'],
 };
 
 // ---------------------------------------------------------------------------
@@ -337,6 +358,11 @@ const CANONICAL_FIELD_TEMPLATES: Record<string, Record<string, unknown>> = {
   brief: { brief_type: null, deadline: null, stakeholders: null, deliverables: null },
   event: { event_type: null, venue: null, start_date: null, end_date: null, expected_attendees: null },
   policy: { policy_type: null, effective_date: null, review_date: null, owner: null },
+  inbox_item: { source_text: "", source_url: null, suggested_type: null, suggested_title: null },
+  artifact_type: { artifact_kind: "", uri_or_path: "", hash: null, mime: null, parent_entity_id: null },
+  concept: { definition: null, aliases: null, domain: null },
+  commitment: { owner_id: "", deadline: null, source_context: null, tracking_tool: null },
+  issue: { severity: "", first_observed: null, affected_area: null, owner_id: null, resolution_notes: null },
 };
 
 function getCanonicalTemplate(entityType: string): string {

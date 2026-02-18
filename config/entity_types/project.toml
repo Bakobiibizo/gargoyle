@@ -1,0 +1,26 @@
+version = 1
+statuses = ["planning", "active", "paused", "completed", "archived"]
+
+[[fields]]
+name = "owner_id"
+type = "String"
+required = false
+description = "ID of the project owner"
+
+[[fields]]
+name = "objective"
+type = "String"
+required = false
+description = "Main objective of this project"
+
+[[fields]]
+name = "success_criteria"
+type = "String"
+required = false
+description = "Criteria for project success"
+
+[[fields]]
+name = "timeline"
+type = "String"
+required = false
+description = "Project timeline"

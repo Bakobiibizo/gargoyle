@@ -1,0 +1,20 @@
+version = 1
+statuses = ["draft", "active", "superseded"]
+
+[[fields]]
+name = "taxonomy_type"
+type = { Enum = ["category", "tag", "hierarchy"] }
+required = false
+description = "Type of taxonomy"
+
+[[fields]]
+name = "parent_id"
+type = { EntityRef = "taxonomy" }
+required = false
+description = "Reference to parent taxonomy node"
+
+[[fields]]
+name = "level"
+type = "Number"
+required = false
+description = "Level in the taxonomy hierarchy"

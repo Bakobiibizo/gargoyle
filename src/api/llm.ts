@@ -22,6 +22,25 @@ export interface LlmChatOutput {
   } | null;
 }
 
+export interface ToolCallLog {
+  tool_name: string;
+  arguments: string;
+  result: string;
+  success: boolean;
+}
+
+export interface LlmToolChatOutput {
+  reply: string;
+  model: string;
+  finish_reason: string | null;
+  usage: {
+    prompt_tokens: number | null;
+    completion_tokens: number | null;
+    total_tokens: number | null;
+  } | null;
+  tool_calls_made: ToolCallLog[];
+}
+
 export interface LlmStatusOutput {
   connected: boolean;
   model: string;
@@ -31,6 +50,10 @@ export interface LlmStatusOutput {
 
 export async function llmChat(input: LlmChatInput): Promise<LlmChatOutput> {
   return invoke('llm_chat', { input });
+}
+
+export async function llmChatWithTools(input: LlmChatInput): Promise<LlmToolChatOutput> {
+  return invoke('llm_chat_with_tools', { input });
 }
 
 export async function llmComplete(prompt: string): Promise<string> {

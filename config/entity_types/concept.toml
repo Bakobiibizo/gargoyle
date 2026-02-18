@@ -1,0 +1,14 @@
+version = 1
+statuses = []
+
+[[fields]]
+name = "definition"
+type = "String"
+required = false
+description = "Definition of the concept"
+
+[[fields]]
+name = "domain"
+type = "String"
+required = false
+description = "Domain the concept belongs to"

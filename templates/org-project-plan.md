@@ -1,4 +1,10 @@
-Category: organizing
+Template Key: org-project-plan
+Category: org
+Version: 1.0
+Maturity: workflow
+Produces Entities: task
+Produces Relations: belongs_to
+Prerequisite: project >= 1 | suggested: org-project-charter | Project plans need an existing project to plan for
 Response Format: mixed
 
 ---

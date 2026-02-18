@@ -1,4 +1,9 @@
+Template Key: mkt-icp-definition
 Category: marketing
+Version: 1.0
+Maturity: foundational
+Produces Entities: person, audience
+Produces Relations: belongs_to
 Response Format: mixed
 
 ---

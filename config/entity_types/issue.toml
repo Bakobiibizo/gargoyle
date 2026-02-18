@@ -1,0 +1,32 @@
+version = 1
+statuses = ["open", "investigating", "mitigated", "resolved", "wont_fix"]
+
+[[fields]]
+name = "severity"
+type = { Enum = ["critical", "high", "medium", "low"] }
+required = false
+description = "Severity level of the issue"
+
+[[fields]]
+name = "first_observed"
+type = "String"
+required = false
+description = "Date the issue was first observed"
+
+[[fields]]
+name = "affected_area"
+type = "String"
+required = false
+description = "Area affected by the issue"
+
+[[fields]]
+name = "owner_id"
+type = "String"
+required = false
+description = "Person responsible for resolving this issue"
+
+[[fields]]
+name = "resolution_notes"
+type = "String"
+required = false
+description = "Notes on how the issue was resolved"

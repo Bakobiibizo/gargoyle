@@ -1,0 +1,32 @@
+version = 1
+statuses = []
+
+[[fields]]
+name = "artifact_kind"
+type = { Enum = ["attachment", "link", "export", "rendered_doc"] }
+required = false
+description = "Kind of artifact"
+
+[[fields]]
+name = "uri_or_path"
+type = "String"
+required = true
+description = "URI or file path of the artifact"
+
+[[fields]]
+name = "hash"
+type = "String"
+required = false
+description = "Hash of the artifact content"
+
+[[fields]]
+name = "mime"
+type = "String"
+required = false
+description = "MIME type of the artifact"
+
+[[fields]]
+name = "parent_entity_id"
+type = { EntityRef = "*" }
+required = false
+description = "Parent entity this artifact is attached to"

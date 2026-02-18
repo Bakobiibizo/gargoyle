@@ -1,0 +1,26 @@
+version = 1
+statuses = ["draft", "review", "active", "superseded"]
+
+[[fields]]
+name = "policy_type"
+type = { Enum = ["security", "hr", "compliance", "operational"] }
+required = false
+description = "Type of policy"
+
+[[fields]]
+name = "effective_date"
+type = "String"
+required = false
+description = "Date the policy becomes effective"
+
+[[fields]]
+name = "review_date"
+type = "String"
+required = false
+description = "Date the policy is next up for review"
+
+[[fields]]
+name = "owner"
+type = "String"
+required = false
+description = "Owner of this policy"

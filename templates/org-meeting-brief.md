@@ -1,4 +1,10 @@
-Category: organizing
+Template Key: org-meeting-brief
+Category: org
+Version: 1.0
+Maturity: workflow
+Produces Entities: brief
+Produces Relations: summarizes
+Prerequisite: session >= 1 | Meeting briefs require an existing session to summarize
 Response Format: mixed
 
 ---

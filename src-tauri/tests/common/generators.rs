@@ -4,15 +4,16 @@ use proptest::prelude::*;
 // All 22 entity types
 // =============================================================================
 
-/// The complete list of 22 entity types in the knowledge graph.
+/// The complete list of 27 entity types in the knowledge graph.
 pub const ALL_ENTITY_TYPES: &[&str] = &[
     "metric", "experiment", "result", "task", "project", "decision",
     "person", "note", "session", "campaign", "audience", "competitor",
     "channel", "spec", "budget", "vendor", "playbook", "taxonomy",
-    "backlog", "brief", "event", "policy",
+    "backlog", "brief", "event", "policy", "inbox_item", "artifact_type",
+    "concept", "commitment", "issue",
 ];
 
-/// Generate a random entity type from all 22 types.
+/// Generate a random entity type from all 27 types.
 pub fn gen_entity_type() -> impl Strategy<Value = String> {
     prop_oneof![
         Just("metric".to_string()),
@@ -37,11 +38,16 @@ pub fn gen_entity_type() -> impl Strategy<Value = String> {
         Just("brief".to_string()),
         Just("event".to_string()),
         Just("policy".to_string()),
+        Just("inbox_item".to_string()),
+        Just("artifact_type".to_string()),
+        Just("concept".to_string()),
+        Just("commitment".to_string()),
+        Just("issue".to_string()),
     ]
 }
 
 /// Generate random canonical fields that may or may not be valid,
-/// dispatching to per-type generators for all 22 entity types.
+/// dispatching to per-type generators for all 27 entity types.
 pub fn gen_canonical_fields(entity_type: &str) -> impl Strategy<Value = serde_json::Value> {
     match entity_type {
         "metric" => gen_metric_fields().boxed(),
@@ -66,6 +72,11 @@ pub fn gen_canonical_fields(entity_type: &str) -> impl Strategy<Value = serde_js
         "brief" => gen_brief_fields().boxed(),
         "event" => gen_event_fields().boxed(),
         "policy" => gen_policy_fields().boxed(),
+        "inbox_item" => gen_inbox_item_fields().boxed(),
+        "artifact_type" => gen_artifact_type_fields().boxed(),
+        "concept" => gen_concept_fields().boxed(),
+        "commitment" => gen_commitment_fields().boxed(),
+        "issue" => gen_issue_fields().boxed(),
         _ => Just(serde_json::json!({})).boxed(),
     }
 }
@@ -96,6 +107,11 @@ pub fn gen_valid_canonical_fields(entity_type: &str) -> impl Strategy<Value = se
         "brief" => gen_valid_brief_fields().boxed(),
         "event" => gen_valid_event_fields().boxed(),
         "policy" => gen_valid_policy_fields().boxed(),
+        "inbox_item" => gen_valid_inbox_item_fields().boxed(),
+        "artifact_type" => gen_valid_artifact_type_fields().boxed(),
+        "concept" => gen_valid_concept_fields().boxed(),
+        "commitment" => gen_valid_commitment_fields().boxed(),
+        "issue" => gen_valid_issue_fields().boxed(),
         _ => Just(serde_json::json!({})).boxed(),
     }
 }
@@ -105,26 +121,30 @@ pub fn gen_valid_status_for_type(entity_type: &str) -> impl Strategy<Value = Str
     let statuses: Vec<&str> = match entity_type {
         "metric" => vec!["active", "paused", "deprecated", "archived"],
         "experiment" => vec!["draft", "running", "concluded", "archived"],
-        "result" => vec!["draft", "final", "archived"],
-        "task" => vec!["backlog", "todo", "in_progress", "blocked", "done", "archived"],
+        "result" => vec!["preliminary", "final", "invalidated"],
+        "task" => vec!["open", "in_progress", "blocked", "done", "cancelled"],
         "project" => vec!["planning", "active", "paused", "completed", "archived"],
-        "decision" => vec!["proposed", "accepted", "deprecated", "superseded"],
-        "person" => vec!["active", "inactive", "archived"],
-        "note" => vec!["draft", "final", "archived"],
-        "session" => vec!["scheduled", "in_progress", "completed", "cancelled"],
-        "campaign" => vec!["planning", "active", "paused", "completed", "archived"],
-        "audience" => vec!["draft", "validated", "active", "archived"],
-        "competitor" => vec!["tracking", "dormant", "archived"],
-        "channel" => vec!["evaluating", "active", "scaling", "paused", "deprecated"],
-        "spec" => vec!["draft", "review", "approved", "deprecated"],
-        "budget" => vec!["draft", "approved", "active", "closed"],
-        "vendor" => vec!["evaluating", "active", "on_hold", "terminated"],
-        "playbook" => vec!["draft", "active", "deprecated", "archived"],
-        "taxonomy" => vec!["draft", "active", "archived"],
-        "backlog" => vec!["open", "triaged", "scheduled", "closed"],
-        "brief" => vec!["draft", "review", "approved", "archived"],
-        "event" => vec!["proposed", "confirmed", "in_progress", "completed", "cancelled"],
-        "policy" => vec!["draft", "active", "under_review", "deprecated"],
+        "decision" => vec!["pending", "decided", "revisited", "superseded"],
+        "person" => vec!["active", "departed"],
+        "note" => vec!["active"], // note has no status machine, use a placeholder
+        "session" => vec!["active", "ended"],
+        "campaign" => vec!["planning", "live", "paused", "completed", "cancelled"],
+        "audience" => vec!["draft", "validated", "deprecated"],
+        "competitor" => vec!["active", "acquired", "defunct", "irrelevant"],
+        "channel" => vec!["active", "paused", "retired"],
+        "spec" => vec!["draft", "review", "approved", "superseded"],
+        "budget" => vec!["draft", "approved", "active", "exhausted", "closed"],
+        "vendor" => vec!["evaluating", "active", "paused", "terminated"],
+        "playbook" => vec!["draft", "active", "deprecated"],
+        "taxonomy" => vec!["draft", "active", "superseded"],
+        "backlog" => vec!["needs_triage", "triaged", "stale"],
+        "brief" => vec!["draft", "approved", "in_progress", "completed"],
+        "event" => vec!["concept", "planning", "confirmed", "completed", "cancelled"],
+        "policy" => vec!["draft", "review", "active", "superseded"],
+        "inbox_item" => vec!["unprocessed", "triaged", "archived"],
+        "commitment" => vec!["on_track", "at_risk", "blocked", "fulfilled", "broken"],
+        "issue" => vec!["open", "investigating", "mitigated", "resolved", "wont_fix"],
+        "artifact_type" | "concept" => vec!["draft"], // no status machine
         _ => vec!["draft"],
     };
     let owned: Vec<String> = statuses.into_iter().map(|s| s.to_string()).collect();
@@ -136,26 +156,29 @@ pub fn initial_status_for_type(entity_type: &str) -> &'static str {
     match entity_type {
         "metric" => "active",
         "experiment" => "draft",
-        "result" => "draft",
-        "task" => "backlog",
+        "result" => "preliminary",
+        "task" => "open",
         "project" => "planning",
-        "decision" => "proposed",
+        "decision" => "pending",
         "person" => "active",
-        "note" => "draft",
-        "session" => "scheduled",
+        "note" => "active",
+        "session" => "active",
         "campaign" => "planning",
         "audience" => "draft",
-        "competitor" => "tracking",
-        "channel" => "evaluating",
+        "competitor" => "active",
+        "channel" => "active",
         "spec" => "draft",
         "budget" => "draft",
         "vendor" => "evaluating",
         "playbook" => "draft",
         "taxonomy" => "draft",
-        "backlog" => "open",
+        "backlog" => "needs_triage",
         "brief" => "draft",
-        "event" => "proposed",
+        "event" => "concept",
         "policy" => "draft",
+        "inbox_item" => "unprocessed",
+        "commitment" => "on_track",
+        "issue" => "open",
         _ => "draft",
     }
 }
@@ -166,26 +189,64 @@ pub fn second_status_for_type(entity_type: &str) -> &'static str {
         "metric" => "paused",
         "experiment" => "running",
         "result" => "final",
-        "task" => "todo",
+        "task" => "in_progress",
         "project" => "active",
-        "decision" => "accepted",
-        "person" => "inactive",
-        "note" => "final",
-        "session" => "in_progress",
-        "campaign" => "active",
+        "decision" => "decided",
+        "person" => "departed",
+        "note" => "active", // note has no status machine
+        "session" => "ended",
+        "campaign" => "live",
         "audience" => "validated",
-        "competitor" => "dormant",
-        "channel" => "active",
+        "competitor" => "acquired",
+        "channel" => "paused",
         "spec" => "review",
         "budget" => "approved",
         "vendor" => "active",
         "playbook" => "active",
         "taxonomy" => "active",
         "backlog" => "triaged",
-        "brief" => "review",
-        "event" => "confirmed",
-        "policy" => "active",
+        "brief" => "approved",
+        "event" => "planning",
+        "policy" => "review",
+        "inbox_item" => "triaged",
+        "commitment" => "at_risk",
+        "issue" => "investigating",
         _ => "active",
+    }
+}
+
+/// Returns deterministic, schema-valid canonical fields for a given entity type.
+/// Useful when you need fixed valid fields (e.g., before doing an update test).
+pub fn valid_canonical_fields_for_type(entity_type: &str) -> serde_json::Value {
+    match entity_type {
+        "metric" => serde_json::json!({"current_value": 10.0}),
+        "experiment" => serde_json::json!({"hypothesis": "test", "primary_metric": "conversion_rate"}),
+        "result" => serde_json::json!({"outcome": "test"}),
+        "task" => serde_json::json!({"effort_estimate": "1d"}),
+        "project" => serde_json::json!({"objective": "v2 shipped"}),
+        "decision" => serde_json::json!({"owner_id": "owner", "decided_at": "2025-01-01", "rationale": "reason", "revisit_triggers": "Q2"}),
+        "person" => serde_json::json!({"role": "PM"}),
+        "note" => serde_json::json!({}),
+        "session" => serde_json::json!({"session_type": "planning"}),
+        "campaign" => serde_json::json!({"objective": "acquisition"}),
+        "audience" => serde_json::json!({"segment_criteria": "SMB"}),
+        "competitor" => serde_json::json!({"positioning": "Niche player"}),
+        "channel" => serde_json::json!({"channel_type": "email"}),
+        "spec" => serde_json::json!({"spec_type": "technical"}),
+        "budget" => serde_json::json!({"total_amount": 5000.0}),
+        "vendor" => serde_json::json!({"vendor_type": "agency"}),
+        "playbook" => serde_json::json!({"playbook_type": "sales"}),
+        "taxonomy" => serde_json::json!({"taxonomy_type": "category"}),
+        "backlog" => serde_json::json!({"priority_score": 3.0}),
+        "brief" => serde_json::json!({"brief_type": "creative", "deadline": "2025-06-01"}),
+        "event" => serde_json::json!({"event_type": "conference"}),
+        "policy" => serde_json::json!({"policy_type": "compliance"}),
+        "inbox_item" => serde_json::json!({"source_text": "Fuzz inbox item"}),
+        "artifact_type" => serde_json::json!({"artifact_kind": "attachment", "uri_or_path": "/fuzz/file.pdf"}),
+        "concept" => serde_json::json!({"definition": "Fuzz concept"}),
+        "commitment" => serde_json::json!({"owner_id": "owner"}),
+        "issue" => serde_json::json!({"severity": "low"}),
+        _ => serde_json::json!({}),
     }
 }
 
@@ -230,16 +291,12 @@ fn gen_experiment_fields() -> impl Strategy<Value = serde_json::Value> {
     (
         prop_oneof![Just(None), "\\PC{1,50}".prop_map(|s| Some(s))],
         prop_oneof![Just(None), "\\PC{1,20}".prop_map(|s| Some(s))],
-        prop_oneof![
-            Just(None),
-            Just(Some("nonexistent-id".to_string())),
-            "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}".prop_map(|s| Some(s)),
-        ],
-    ).prop_map(|(hypothesis, funnel_position, source_experiment_id)| {
+        prop_oneof![Just(None), "\\PC{1,30}".prop_map(|s| Some(s))],
+    ).prop_map(|(hypothesis, funnel_position, primary_metric)| {
         let mut map = serde_json::Map::new();
         if let Some(v) = hypothesis { map.insert("hypothesis".to_string(), serde_json::Value::from(v)); }
         if let Some(v) = funnel_position { map.insert("funnel_position".to_string(), serde_json::Value::from(v)); }
-        if let Some(v) = source_experiment_id { map.insert("source_experiment_id".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = primary_metric { map.insert("primary_metric".to_string(), serde_json::Value::from(v)); }
         serde_json::Value::Object(map)
     })
 }
@@ -247,16 +304,16 @@ fn gen_experiment_fields() -> impl Strategy<Value = serde_json::Value> {
 fn gen_result_fields() -> impl Strategy<Value = serde_json::Value> {
     (
         prop_oneof![Just(None), "\\PC{1,100}".prop_map(|s| Some(s))],
-        prop_oneof![Just(None), "\\PC{1,50}".prop_map(|s| Some(s))],
         prop_oneof![
             Just(None),
-            (0.0..1.0f64).prop_map(|v| Some(v)),
-            any::<f64>().prop_map(|v| Some(v)), // may be out of range
+            Just(Some("high".to_string())),
+            Just(Some("medium".to_string())),
+            Just(Some("low".to_string())),
+            Just(Some("invalid_level".to_string())), // invalid enum
         ],
-    ).prop_map(|(findings, methodology, confidence_level)| {
+    ).prop_map(|(outcome, confidence_level)| {
         let mut map = serde_json::Map::new();
-        if let Some(v) = findings { map.insert("findings".to_string(), serde_json::Value::from(v)); }
-        if let Some(v) = methodology { map.insert("methodology".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = outcome { map.insert("outcome".to_string(), serde_json::Value::from(v)); }
         if let Some(v) = confidence_level { map.insert("confidence_level".to_string(), serde_json::Value::from(v)); }
         serde_json::Value::Object(map)
     })
@@ -276,9 +333,9 @@ fn gen_task_fields() -> impl Strategy<Value = serde_json::Value> {
             "\\PC{1,30}".prop_map(|s| Some(s)),
         ],
         prop_oneof![Just(None), "\\PC{1,50}".prop_map(|s| Some(s))],
-    ).prop_map(|(assignee, effort_estimate, project_id, acceptance_criteria)| {
+    ).prop_map(|(assignee_id, effort_estimate, project_id, acceptance_criteria)| {
         let mut map = serde_json::Map::new();
-        if let Some(v) = assignee { map.insert("assignee".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = assignee_id { map.insert("assignee_id".to_string(), serde_json::Value::from(v)); }
         if let Some(v) = effort_estimate { map.insert("effort_estimate".to_string(), serde_json::Value::from(v)); }
         if let Some(v) = project_id { map.insert("project_id".to_string(), serde_json::Value::from(v)); }
         if let Some(v) = acceptance_criteria { map.insert("acceptance_criteria".to_string(), serde_json::Value::from(v)); }
@@ -332,12 +389,12 @@ fn gen_person_fields() -> impl Strategy<Value = serde_json::Value> {
             Just(Some(true)),
             Just(Some(false)),
         ],
-    ).prop_map(|(email, role, team, external)| {
+    ).prop_map(|(email, role, department, is_external)| {
         let mut map = serde_json::Map::new();
         if let Some(v) = email { map.insert("email".to_string(), serde_json::Value::from(v)); }
         if let Some(v) = role { map.insert("role".to_string(), serde_json::Value::from(v)); }
-        if let Some(v) = team { map.insert("team".to_string(), serde_json::Value::from(v)); }
-        if let Some(v) = external { map.insert("external".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = department { map.insert("department".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = is_external { map.insert("is_external".to_string(), serde_json::Value::from(v)); }
         serde_json::Value::Object(map)
     })
 }
@@ -692,6 +749,112 @@ fn gen_policy_fields() -> impl Strategy<Value = serde_json::Value> {
 }
 
 // =============================================================================
+// Wave 3 types: inbox_item, artifact_type, concept, commitment, issue
+// =============================================================================
+
+fn gen_inbox_item_fields() -> impl Strategy<Value = serde_json::Value> {
+    (
+        prop_oneof![Just(None), "\\PC{1,80}".prop_map(|s| Some(s))],
+        prop_oneof![Just(None), "\\PC{1,50}".prop_map(|s| Some(s))],
+        prop_oneof![Just(None), "\\PC{1,20}".prop_map(|s| Some(s))],
+        prop_oneof![Just(None), "\\PC{1,30}".prop_map(|s| Some(s))],
+    ).prop_map(|(source_text, source_url, suggested_type, suggested_title)| {
+        let mut map = serde_json::Map::new();
+        if let Some(v) = source_text { map.insert("source_text".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = source_url { map.insert("source_url".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = suggested_type { map.insert("suggested_type".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = suggested_title { map.insert("suggested_title".to_string(), serde_json::Value::from(v)); }
+        serde_json::Value::Object(map)
+    })
+}
+
+fn gen_artifact_type_fields() -> impl Strategy<Value = serde_json::Value> {
+    (
+        prop_oneof![
+            Just(None),
+            Just(Some("attachment".to_string())),
+            Just(Some("link".to_string())),
+            Just(Some("export".to_string())),
+            Just(Some("rendered_doc".to_string())),
+            Just(Some("invalid_kind".to_string())), // invalid enum
+        ],
+        prop_oneof![Just(None), "\\PC{1,50}".prop_map(|s| Some(s))],
+        prop_oneof![Just(None), "\\PC{1,40}".prop_map(|s| Some(s))],
+        prop_oneof![Just(None), "\\PC{1,30}".prop_map(|s| Some(s))],
+        prop_oneof![
+            Just(None),
+            Just(Some("nonexistent-parent-id".to_string())),
+            "\\PC{1,30}".prop_map(|s| Some(s)),
+        ],
+    ).prop_map(|(artifact_kind, uri_or_path, hash, mime, parent_entity_id)| {
+        let mut map = serde_json::Map::new();
+        if let Some(v) = artifact_kind { map.insert("artifact_kind".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = uri_or_path { map.insert("uri_or_path".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = hash { map.insert("hash".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = mime { map.insert("mime".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = parent_entity_id { map.insert("parent_entity_id".to_string(), serde_json::Value::from(v)); }
+        serde_json::Value::Object(map)
+    })
+}
+
+fn gen_concept_fields() -> impl Strategy<Value = serde_json::Value> {
+    (
+        prop_oneof![Just(None), "\\PC{1,80}".prop_map(|s| Some(s))],
+        prop_oneof![Just(None), "\\PC{1,30}".prop_map(|s| Some(s))],
+    ).prop_map(|(definition, domain)| {
+        let mut map = serde_json::Map::new();
+        if let Some(v) = definition { map.insert("definition".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = domain { map.insert("domain".to_string(), serde_json::Value::from(v)); }
+        serde_json::Value::Object(map)
+    })
+}
+
+fn gen_commitment_fields() -> impl Strategy<Value = serde_json::Value> {
+    (
+        prop_oneof![Just(None), "\\PC{1,30}".prop_map(|s| Some(s))],
+        prop_oneof![Just(None), "\\PC{1,20}".prop_map(|s| Some(s))],
+        prop_oneof![Just(None), "\\PC{1,40}".prop_map(|s| Some(s))],
+        prop_oneof![Just(None), "\\PC{1,30}".prop_map(|s| Some(s))],
+    ).prop_map(|(owner_id, deadline, source_context, tracking_tool)| {
+        let mut map = serde_json::Map::new();
+        if let Some(v) = owner_id { map.insert("owner_id".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = deadline { map.insert("deadline".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = source_context { map.insert("source_context".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = tracking_tool { map.insert("tracking_tool".to_string(), serde_json::Value::from(v)); }
+        serde_json::Value::Object(map)
+    })
+}
+
+fn gen_issue_fields() -> impl Strategy<Value = serde_json::Value> {
+    (
+        prop_oneof![
+            Just(None),
+            Just(Some("critical".to_string())),
+            Just(Some("high".to_string())),
+            Just(Some("medium".to_string())),
+            Just(Some("low".to_string())),
+            Just(Some("invalid_severity".to_string())), // invalid enum
+        ],
+        prop_oneof![Just(None), "\\PC{1,20}".prop_map(|s| Some(s))],
+        prop_oneof![Just(None), "\\PC{1,40}".prop_map(|s| Some(s))],
+        prop_oneof![
+            Just(None),
+            Just(Some("nonexistent-person-id".to_string())),
+            "\\PC{1,30}".prop_map(|s| Some(s)),
+        ],
+        prop_oneof![Just(None), "\\PC{1,80}".prop_map(|s| Some(s))],
+    ).prop_map(|(severity, first_observed, affected_area, owner_id, resolution_notes)| {
+        let mut map = serde_json::Map::new();
+        if let Some(v) = severity { map.insert("severity".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = first_observed { map.insert("first_observed".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = affected_area { map.insert("affected_area".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = owner_id { map.insert("owner_id".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = resolution_notes { map.insert("resolution_notes".to_string(), serde_json::Value::from(v)); }
+        serde_json::Value::Object(map)
+    })
+}
+
+// =============================================================================
 // VALID field generators -- always produce schema-valid values
 // =============================================================================
 
@@ -713,25 +876,25 @@ fn gen_valid_metric_fields() -> impl Strategy<Value = serde_json::Value> {
 
 fn gen_valid_experiment_fields() -> impl Strategy<Value = serde_json::Value> {
     (
-        prop_oneof![Just(None), Just(Some("Test hypothesis".to_string()))],
+        Just("Test hypothesis".to_string()),
         prop_oneof![Just(None), Just(Some("checkout".to_string()))],
-    ).prop_map(|(hypothesis, funnel_position)| {
+        Just("conversion_rate".to_string()),
+    ).prop_map(|(hypothesis, funnel_position, primary_metric)| {
         let mut map = serde_json::Map::new();
-        if let Some(v) = hypothesis { map.insert("hypothesis".to_string(), serde_json::Value::from(v)); }
+        map.insert("hypothesis".to_string(), serde_json::Value::from(hypothesis));
         if let Some(v) = funnel_position { map.insert("funnel_position".to_string(), serde_json::Value::from(v)); }
+        map.insert("primary_metric".to_string(), serde_json::Value::from(primary_metric));
         serde_json::Value::Object(map)
     })
 }
 
 fn gen_valid_result_fields() -> impl Strategy<Value = serde_json::Value> {
     (
-        prop_oneof![Just(None), Just(Some("Test findings".to_string()))],
-        prop_oneof![Just(None), Just(Some("A/B test".to_string()))],
-        prop_oneof![Just(None), (0.0..1.0f64).prop_map(|v| Some(v))],
-    ).prop_map(|(findings, methodology, confidence_level)| {
+        Just("Test outcome".to_string()),
+        prop_oneof![Just(None), Just(Some("high".to_string())), Just(Some("medium".to_string())), Just(Some("low".to_string()))],
+    ).prop_map(|(outcome, confidence_level)| {
         let mut map = serde_json::Map::new();
-        if let Some(v) = findings { map.insert("findings".to_string(), serde_json::Value::from(v)); }
-        if let Some(v) = methodology { map.insert("methodology".to_string(), serde_json::Value::from(v)); }
+        map.insert("outcome".to_string(), serde_json::Value::from(outcome));
         if let Some(v) = confidence_level { map.insert("confidence_level".to_string(), serde_json::Value::from(v)); }
         serde_json::Value::Object(map)
     })
@@ -742,9 +905,9 @@ fn gen_valid_task_fields() -> impl Strategy<Value = serde_json::Value> {
         prop_oneof![Just(None), Just(Some("Alice".to_string()))],
         prop_oneof![Just(None), Just(Some("M".to_string()))],
         prop_oneof![Just(None), Just(Some("Done when tests pass".to_string()))],
-    ).prop_map(|(assignee, effort_estimate, acceptance_criteria)| {
+    ).prop_map(|(assignee_id, effort_estimate, acceptance_criteria)| {
         let mut map = serde_json::Map::new();
-        if let Some(v) = assignee { map.insert("assignee".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = assignee_id { map.insert("assignee_id".to_string(), serde_json::Value::from(v)); }
         if let Some(v) = effort_estimate { map.insert("effort_estimate".to_string(), serde_json::Value::from(v)); }
         if let Some(v) = acceptance_criteria { map.insert("acceptance_criteria".to_string(), serde_json::Value::from(v)); }
         serde_json::Value::Object(map)
@@ -788,12 +951,12 @@ fn gen_valid_person_fields() -> impl Strategy<Value = serde_json::Value> {
         prop_oneof![Just(None), Just(Some("Engineer".to_string()))],
         prop_oneof![Just(None), Just(Some("Platform".to_string()))],
         prop_oneof![Just(None), Just(Some(false))],
-    ).prop_map(|(email, role, team, external)| {
+    ).prop_map(|(email, role, department, is_external)| {
         let mut map = serde_json::Map::new();
         if let Some(v) = email { map.insert("email".to_string(), serde_json::Value::from(v)); }
         if let Some(v) = role { map.insert("role".to_string(), serde_json::Value::from(v)); }
-        if let Some(v) = team { map.insert("team".to_string(), serde_json::Value::from(v)); }
-        if let Some(v) = external { map.insert("external".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = department { map.insert("department".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = is_external { map.insert("is_external".to_string(), serde_json::Value::from(v)); }
         serde_json::Value::Object(map)
     })
 }
@@ -1005,6 +1168,86 @@ fn gen_valid_policy_fields() -> impl Strategy<Value = serde_json::Value> {
 }
 
 // =============================================================================
+// Wave 3 VALID generators: inbox_item, artifact_type, concept, commitment, issue
+// =============================================================================
+
+fn gen_valid_inbox_item_fields() -> impl Strategy<Value = serde_json::Value> {
+    (
+        Just("Captured from clipboard".to_string()), // source_text is required
+        prop_oneof![Just(None), Just(Some("https://example.com/article".to_string()))],
+        prop_oneof![Just(None), Just(Some("note".to_string()))],
+        prop_oneof![Just(None), Just(Some("Meeting notes".to_string()))],
+    ).prop_map(|(source_text, source_url, suggested_type, suggested_title)| {
+        let mut map = serde_json::Map::new();
+        map.insert("source_text".to_string(), serde_json::Value::from(source_text));
+        if let Some(v) = source_url { map.insert("source_url".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = suggested_type { map.insert("suggested_type".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = suggested_title { map.insert("suggested_title".to_string(), serde_json::Value::from(v)); }
+        serde_json::Value::Object(map)
+    })
+}
+
+fn gen_valid_artifact_type_fields() -> impl Strategy<Value = serde_json::Value> {
+    (
+        prop_oneof![Just("attachment".to_string()), Just("link".to_string()), Just("export".to_string()), Just("rendered_doc".to_string())],
+        Just("/test/file.pdf".to_string()), // uri_or_path is required
+        prop_oneof![Just(None), Just(Some("abc123hash".to_string()))],
+        prop_oneof![Just(None), Just(Some("application/pdf".to_string()))],
+    ).prop_map(|(artifact_kind, uri_or_path, hash, mime)| {
+        let mut map = serde_json::Map::new();
+        map.insert("artifact_kind".to_string(), serde_json::Value::from(artifact_kind));
+        map.insert("uri_or_path".to_string(), serde_json::Value::from(uri_or_path));
+        if let Some(v) = hash { map.insert("hash".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = mime { map.insert("mime".to_string(), serde_json::Value::from(v)); }
+        serde_json::Value::Object(map)
+    })
+}
+
+fn gen_valid_concept_fields() -> impl Strategy<Value = serde_json::Value> {
+    (
+        prop_oneof![Just(None), Just(Some("A foundational concept".to_string()))],
+        prop_oneof![Just(None), Just(Some("marketing".to_string()))],
+    ).prop_map(|(definition, domain)| {
+        let mut map = serde_json::Map::new();
+        if let Some(v) = definition { map.insert("definition".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = domain { map.insert("domain".to_string(), serde_json::Value::from(v)); }
+        serde_json::Value::Object(map)
+    })
+}
+
+fn gen_valid_commitment_fields() -> impl Strategy<Value = serde_json::Value> {
+    (
+        Just("owner-person-id".to_string()), // owner_id is required
+        prop_oneof![Just(None), Just(Some("2025-06-01".to_string()))],
+        prop_oneof![Just(None), Just(Some("Weekly standup".to_string()))],
+        prop_oneof![Just(None), Just(Some("Jira".to_string()))],
+    ).prop_map(|(owner_id, deadline, source_context, tracking_tool)| {
+        let mut map = serde_json::Map::new();
+        map.insert("owner_id".to_string(), serde_json::Value::from(owner_id));
+        if let Some(v) = deadline { map.insert("deadline".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = source_context { map.insert("source_context".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = tracking_tool { map.insert("tracking_tool".to_string(), serde_json::Value::from(v)); }
+        serde_json::Value::Object(map)
+    })
+}
+
+fn gen_valid_issue_fields() -> impl Strategy<Value = serde_json::Value> {
+    (
+        prop_oneof![Just("critical".to_string()), Just("high".to_string()), Just("medium".to_string()), Just("low".to_string())],
+        prop_oneof![Just(None), Just(Some("2025-01-15".to_string()))],
+        prop_oneof![Just(None), Just(Some("Payment pipeline".to_string()))],
+        prop_oneof![Just(None), Just(Some("Patched in hotfix v1.2.3".to_string()))],
+    ).prop_map(|(severity, first_observed, affected_area, resolution_notes)| {
+        let mut map = serde_json::Map::new();
+        map.insert("severity".to_string(), serde_json::Value::from(severity));
+        if let Some(v) = first_observed { map.insert("first_observed".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = affected_area { map.insert("affected_area".to_string(), serde_json::Value::from(v)); }
+        if let Some(v) = resolution_notes { map.insert("resolution_notes".to_string(), serde_json::Value::from(v)); }
+        serde_json::Value::Object(map)
+    })
+}
+
+// =============================================================================
 // Shared generators
 // =============================================================================
 
@@ -1022,19 +1265,6 @@ pub fn gen_source() -> impl Strategy<Value = String> {
     ]
 }
 
-/// Generate a valid source (only values that pass the CHECK constraint)
-pub fn gen_valid_source() -> impl Strategy<Value = String> {
-    prop_oneof![
-        Just("manual".to_string()),
-        Just("clipboard".to_string()),
-        Just("web".to_string()),
-        Just("import".to_string()),
-        Just("agent".to_string()),
-        Just("template".to_string()),
-        Just("bootstrap".to_string()),
-    ]
-}
-
 /// Generate a valid or invalid status for an entity type
 pub fn gen_status() -> impl Strategy<Value = Option<String>> {
     prop_oneof![
@@ -1048,32 +1278,35 @@ pub fn gen_status() -> impl Strategy<Value = Option<String>> {
         Just(Some("deprecated".to_string())),
         Just(Some("final".to_string())),
         Just(Some("completed".to_string())),
-        Just(Some("backlog".to_string())),
-        Just(Some("todo".to_string())),
         Just(Some("in_progress".to_string())),
         Just(Some("blocked".to_string())),
         Just(Some("done".to_string())),
         Just(Some("planning".to_string())),
-        Just(Some("proposed".to_string())),
-        Just(Some("accepted".to_string())),
         Just(Some("superseded".to_string())),
-        Just(Some("inactive".to_string())),
-        Just(Some("scheduled".to_string())),
         Just(Some("cancelled".to_string())),
         Just(Some("validated".to_string())),
-        Just(Some("tracking".to_string())),
-        Just(Some("dormant".to_string())),
         Just(Some("evaluating".to_string())),
-        Just(Some("scaling".to_string())),
         Just(Some("review".to_string())),
         Just(Some("approved".to_string())),
         Just(Some("closed".to_string())),
-        Just(Some("on_hold".to_string())),
         Just(Some("terminated".to_string())),
         Just(Some("open".to_string())),
         Just(Some("triaged".to_string())),
         Just(Some("confirmed".to_string())),
-        Just(Some("under_review".to_string())),
+        Just(Some("needs_triage".to_string())),
+        Just(Some("stale".to_string())),
+        Just(Some("live".to_string())),
+        Just(Some("exhausted".to_string())),
+        Just(Some("retired".to_string())),
+        Just(Some("unprocessed".to_string())),
+        Just(Some("on_track".to_string())),
+        Just(Some("at_risk".to_string())),
+        Just(Some("fulfilled".to_string())),
+        Just(Some("broken".to_string())),
+        Just(Some("investigating".to_string())),
+        Just(Some("mitigated".to_string())),
+        Just(Some("resolved".to_string())),
+        Just(Some("wont_fix".to_string())),
         Just(Some("totally_bogus".to_string())),    // invalid for all types
         "\\PC{3,15}".prop_map(|s| Some(s)),          // random
     ]

@@ -1,4 +1,9 @@
+Template Key: dev-adr-writer
 Category: development
+Version: 1.0
+Maturity: workflow
+Produces Entities: decision
+Produces Relations:
 Response Format: mixed
 
 ---

@@ -1,4 +1,10 @@
+Template Key: mkt-positioning-narrative
 Category: marketing
+Version: 1.0
+Maturity: advanced
+Produces Entities: note
+Produces Relations: targets
+Prerequisite: person >= 1 | suggested: mkt-icp-definition | Positioning narratives need a target persona to position for
 Response Format: mixed
 
 ---

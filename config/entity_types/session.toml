@@ -1,0 +1,26 @@
+version = 1
+statuses = ["active", "ended"]
+
+[[fields]]
+name = "session_type"
+type = { Enum = ["planning", "review", "standup", "workshop", "retro"] }
+required = false
+description = "Type of session"
+
+[[fields]]
+name = "participants"
+type = "String"
+required = false
+description = "Participants in this session"
+
+[[fields]]
+name = "agenda"
+type = "String"
+required = false
+description = "Session agenda"
+
+[[fields]]
+name = "outcomes"
+type = "String"
+required = false
+description = "Session outcomes"

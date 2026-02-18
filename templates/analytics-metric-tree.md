@@ -1,4 +1,9 @@
+Template Key: analytics-metric-tree
 Category: analytics
+Version: 1.0
+Maturity: foundational
+Produces Entities: metric
+Produces Relations: drives
 Response Format: mixed
 
 ---

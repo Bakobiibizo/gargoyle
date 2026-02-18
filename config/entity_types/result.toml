@@ -1,0 +1,20 @@
+version = 1
+statuses = ["preliminary", "final", "invalidated"]
+
+[[fields]]
+name = "outcome"
+type = "String"
+required = false
+description = "The outcome of the experiment or analysis"
+
+[[fields]]
+name = "confidence_level"
+type = "String"
+required = false
+description = "Confidence level of the result"
+
+[[fields]]
+name = "data_summary"
+type = "String"
+required = false
+description = "Summary of data or methodology"

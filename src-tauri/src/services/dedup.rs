@@ -5,8 +5,9 @@
 
 use rusqlite::{params, Connection};
 use std::collections::HashSet;
-use strsim::normalized_levenshtein;
+use strsim::levenshtein;
 
+use crate::config::GargoyleConfig;
 use crate::error::{GargoyleError, Result};
 use crate::models::dedup::{DedupSuggestion, DetectionMethod};
 use crate::services::indexer::IndexerService;
@@ -15,9 +16,11 @@ pub struct DedupPipeline;
 
 impl DedupPipeline {
     /// Main entry point. Runs the 3-stage dedup pipeline in order:
-    ///   1. Exact title match (case-insensitive)
-    ///   2. Fuzzy title match (Levenshtein similarity >= 0.8)
-    ///   3. Embedding proximity (cosine similarity >= 0.85)
+    ///   1. Exact title match (case-insensitive) — confidence from config
+    ///   2. Fuzzy title match (Levenshtein/trigram) — confidence from config
+    ///   3. Embedding proximity — confidence from config
+    ///
+    /// Short-circuits after Stage 1 if a high-confidence (>= 0.95) match is found.
     ///
     /// For each duplicate found, inserts a row into `dedup_suggestions` with
     /// status='pending' and returns the suggestions.
@@ -122,6 +125,7 @@ impl DedupPipeline {
                 other => GargoyleError::Database(other),
             })?;
 
+        let config = &GargoyleConfig::global().dedup;
         let mut suggestions: Vec<DedupSuggestion> = Vec::new();
         let mut found_ids: HashSet<String> = HashSet::new();
 
@@ -149,13 +153,18 @@ impl DedupPipeline {
                     new_entity_id,
                     &existing_id,
                     DetectionMethod::ExactTitle,
-                    1.0,
+                    config.exact_match_confidence,
                 )?;
                 suggestions.push(suggestion);
             }
         }
 
-        // --- Stage 2: Fuzzy title match (Levenshtein >= 0.8) ---
+        // Short-circuit: if Stage 1 found a high-confidence match, skip remaining stages
+        if suggestions.iter().any(|s| s.confidence >= config.exact_match_confidence) {
+            return Ok(suggestions);
+        }
+
+        // --- Stage 2: Fuzzy title match (Levenshtein distance + trigram similarity) ---
         {
             let mut stmt = conn.prepare(
                 "SELECT id, title FROM entities
@@ -170,6 +179,8 @@ impl DedupPipeline {
                 Ok((id, t))
             })?;
 
+            let new_title_lower = title.to_lowercase();
+
             for row in rows {
                 let (existing_id, existing_title) = row?;
 
@@ -178,17 +189,23 @@ impl DedupPipeline {
                     continue;
                 }
 
-                let similarity =
-                    normalized_levenshtein(&title.to_lowercase(), &existing_title.to_lowercase());
+                let existing_title_lower = existing_title.to_lowercase();
 
-                if similarity >= 0.8 {
+                // Criterion A: raw Levenshtein distance
+                let lev_distance = levenshtein(&new_title_lower, &existing_title_lower);
+                let is_lev_match = lev_distance <= config.levenshtein_max_distance;
+
+                // Criterion B: trigram (Jaccard) similarity
+                let is_trigram_match = trigram_similarity(&new_title_lower, &existing_title_lower) > config.trigram_similarity_threshold;
+
+                if is_lev_match || is_trigram_match {
                     found_ids.insert(existing_id.clone());
                     let suggestion = Self::insert_suggestion(
                         conn,
                         new_entity_id,
                         &existing_id,
                         DetectionMethod::FuzzyTitle,
-                        similarity,
+                        config.fuzzy_match_confidence,
                     )?;
                     suggestions.push(suggestion);
                 }
@@ -197,6 +214,12 @@ impl DedupPipeline {
 
         // --- Stage 3: Embedding proximity ---
         {
+            // Short acronym titles produce embeddings too semantically adjacent to
+            // disambiguate reliably. Skip embedding proximity for short titles.
+            if title.len() < config.min_title_length_for_embedding {
+                return Ok(suggestions);
+            }
+
             // Generate embedding for the new entity (best-effort)
             if let Err(_) = IndexerService::generate_embedding(conn, new_entity_id) {
                 // If embedding generation fails, skip this stage
@@ -204,7 +227,7 @@ impl DedupPipeline {
             }
 
             let search_results =
-                match IndexerService::search_similar(conn, &title, 10, Some(0.85)) {
+                match IndexerService::search_similar(conn, &title, 10, Some(config.embedding_proximity_threshold)) {
                     Ok(results) => results,
                     Err(_) => {
                         // If similarity search fails, skip this stage
@@ -232,7 +255,7 @@ impl DedupPipeline {
                     new_entity_id,
                     &result.entity_id,
                     DetectionMethod::EmbeddingProximity,
-                    result.score,
+                    config.embedding_match_confidence,
                 )?;
                 suggestions.push(suggestion);
             }
@@ -302,6 +325,39 @@ impl DedupPipeline {
     }
 }
 
+/// Compute trigram (character 3-gram) Jaccard similarity between two strings.
+///
+/// Splits each string into overlapping character trigrams, then computes
+/// |intersection| / |union|. Returns 0.0 if both strings are too short
+/// to produce any trigrams.
+fn trigram_similarity(a: &str, b: &str) -> f64 {
+    fn trigrams(s: &str) -> HashSet<String> {
+        let chars: Vec<char> = s.chars().collect();
+        if chars.len() < 3 {
+            return HashSet::new();
+        }
+        (0..chars.len() - 2)
+            .map(|i| chars[i..i + 3].iter().collect::<String>())
+            .collect()
+    }
+
+    let set_a = trigrams(a);
+    let set_b = trigrams(b);
+
+    if set_a.is_empty() && set_b.is_empty() {
+        return 0.0;
+    }
+
+    let intersection = set_a.intersection(&set_b).count() as f64;
+    let union = set_a.union(&set_b).count() as f64;
+
+    if union == 0.0 {
+        0.0
+    } else {
+        intersection / union
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,7 +399,7 @@ mod tests {
         assert_eq!(suggestions[0].existing_entity_id, "m-existing");
         assert_eq!(suggestions[0].new_entity_id, "m-new");
         assert_eq!(suggestions[0].detection_method, DetectionMethod::ExactTitle);
-        assert!((suggestions[0].confidence - 1.0).abs() < f64::EPSILON);
+        assert!((suggestions[0].confidence - 0.95).abs() < f64::EPSILON);
         assert_eq!(suggestions[0].status, "pending");
     }
 
@@ -361,7 +417,7 @@ mod tests {
         assert_eq!(suggestions.len(), 1);
         assert_eq!(suggestions[0].existing_entity_id, "m-existing");
         assert_eq!(suggestions[0].detection_method, DetectionMethod::ExactTitle);
-        assert!((suggestions[0].confidence - 1.0).abs() < f64::EPSILON);
+        assert!((suggestions[0].confidence - 0.95).abs() < f64::EPSILON);
     }
 
     // -----------------------------------------------------------------------
@@ -384,18 +440,18 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 4: Fuzzy title match
+    // Test 4: Fuzzy title match (Levenshtein distance <= 3)
     // -----------------------------------------------------------------------
     #[test]
     fn test_fuzzy_title_match() {
         let conn = setup_db();
+        // "monthly revenue" vs "monthly revenues" -> Levenshtein distance = 1 (<=3), should match
         insert_entity(&conn, "m-existing", "metric", "Monthly Revenue");
         insert_entity(&conn, "m-new", "metric", "Monthly Revenues");
 
         let suggestions = DedupPipeline::check_for_duplicates(&conn, "m-new").unwrap();
 
-        // Should find at least one match (could be exact if titles happen to match,
-        // but "Revenue" vs "Revenues" should be fuzzy)
+        // Should find a fuzzy match (not exact, since titles differ)
         assert!(!suggestions.is_empty(), "Should find a fuzzy match");
 
         // Find the fuzzy match specifically
@@ -408,8 +464,8 @@ mod tests {
         );
 
         let fuzzy = fuzzy.unwrap();
-        assert!(fuzzy.confidence >= 0.8, "Confidence should be >= 0.8");
-        assert!(fuzzy.confidence < 1.0, "Should not be exact match");
+        // Confidence is fixed at 0.70 for all fuzzy matches per spec
+        assert!((fuzzy.confidence - 0.70).abs() < f64::EPSILON, "Fuzzy confidence should be fixed at 0.70");
         assert_eq!(fuzzy.existing_entity_id, "m-existing");
     }
 
@@ -439,25 +495,53 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 6: Embedding proximity
+    // Test 6: Embedding proximity — short-circuit on exact match
     // -----------------------------------------------------------------------
     #[test]
     fn test_embedding_proximity() {
         let conn = setup_db();
-        // Two entities with identical titles -> embedding will match perfectly
+        // Two entities with identical titles -> exact match in Stage 1
         insert_entity(&conn, "m-existing", "metric", "User Retention Rate");
         insert_entity(&conn, "m-new", "metric", "User Retention Rate");
 
-        // Generate embedding for the existing entity so search_similar can find it
+        // Generate embedding for the existing entity so search_similar could find it
         IndexerService::generate_embedding(&conn, "m-existing").unwrap();
 
         let suggestions = DedupPipeline::check_for_duplicates(&conn, "m-new").unwrap();
 
-        // The exact title match should be found first (stage 1),
-        // and the embedding match should be deduplicated against it.
-        // So we expect exactly 1 suggestion (exact), not a duplicate embedding one.
-        assert!(!suggestions.is_empty(), "Should find at least one match");
+        // The exact title match (confidence 0.95) triggers short-circuit,
+        // so Stages 2 and 3 are skipped entirely. Only 1 suggestion.
+        assert_eq!(suggestions.len(), 1, "Short-circuit should yield exactly 1 suggestion");
         assert_eq!(suggestions[0].detection_method, DetectionMethod::ExactTitle);
+        assert!((suggestions[0].confidence - 0.95).abs() < f64::EPSILON);
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 6b: Short titles skip embedding proximity stage
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_short_title_skips_embedding_proximity() {
+        let conn = setup_db();
+        // "MRR" is 3 chars (< 4), so embedding proximity should be skipped.
+        // These titles are different enough that exact and fuzzy won't match either.
+        insert_entity(&conn, "m-existing", "metric", "ARR");
+        insert_entity(&conn, "m-new", "metric", "MRR");
+
+        // Generate embedding for existing so it would be findable
+        let _ = IndexerService::generate_embedding(&conn, "m-existing");
+
+        let suggestions = DedupPipeline::check_for_duplicates(&conn, "m-new").unwrap();
+
+        // Should NOT find an embedding proximity match because title is too short
+        let embedding_matches: Vec<_> = suggestions
+            .iter()
+            .filter(|s| s.detection_method == DetectionMethod::EmbeddingProximity)
+            .collect();
+        assert!(
+            embedding_matches.is_empty(),
+            "Short titles (< 4 chars) should not trigger embedding proximity. Got {} matches.",
+            embedding_matches.len()
+        );
     }
 
     // -----------------------------------------------------------------------

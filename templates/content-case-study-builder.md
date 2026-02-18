@@ -1,4 +1,10 @@
+Template Key: content-case-study-builder
 Category: content
+Version: 1.0
+Maturity: workflow
+Produces Entities: note
+Produces Relations: features
+Prerequisite: person >= 1 | suggested: mkt-icp-definition | Case studies need a customer persona as subject
 Response Format: mixed
 
 ---

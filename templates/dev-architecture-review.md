@@ -1,4 +1,10 @@
+Template Key: dev-architecture-review
 Category: development
+Version: 1.0
+Maturity: advanced
+Produces Entities: note, decision
+Produces Relations: evaluates
+Prerequisite: spec >= 1 | suggested: dev-requirements-to-spec | Architecture reviews need a spec to evaluate
 Response Format: mixed
 
 ---

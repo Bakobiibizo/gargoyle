@@ -33,8 +33,9 @@ fn test_3a_3b_update_maintains_schema_version() {
             status: None,
             category: None,
             priority: None,
+            reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
     let create_result = apply_patch_set(&conn, &create_set).expect("create should succeed");
     let entity_id = create_result.applied[0]
@@ -65,7 +66,7 @@ fn test_3a_3b_update_maintains_schema_version() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
     apply_patch_set(&conn, &update_set).expect("update should succeed");
 
@@ -216,7 +217,7 @@ fn test_3e_update_after_migration() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
 
     let result = apply_patch_set(&conn, &update_set);
@@ -271,7 +272,7 @@ fn test_3f_stale_entity_blocks_update() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
 
     let result = apply_patch_set(&conn, &update_set);
@@ -361,7 +362,7 @@ fn test_3g_migration_then_update_full_cycle() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
     let fail_result = apply_patch_set(&conn, &update_stale);
     assert!(fail_result.is_err());
@@ -394,7 +395,7 @@ fn test_3g_migration_then_update_full_cycle() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
     let success_result = apply_patch_set(&conn, &update_after);
     assert!(

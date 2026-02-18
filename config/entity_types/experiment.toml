@@ -1,0 +1,20 @@
+version = 1
+statuses = ["draft", "running", "concluded", "archived"]
+
+[[fields]]
+name = "hypothesis"
+type = "String"
+required = false
+description = "The hypothesis being tested"
+
+[[fields]]
+name = "funnel_position"
+type = "String"
+required = false
+description = "Position in the funnel this experiment targets"
+
+[[fields]]
+name = "primary_metric"
+type = "String"
+required = false
+description = "Primary metric to evaluate this experiment"

@@ -111,7 +111,13 @@ export type PatchOp =
   | { op_type: 'create_entity'; payload: CreateEntityPayload }
   | { op_type: 'update_entity'; payload: UpdateEntityPayload }
   | { op_type: 'create_relation'; payload: CreateRelationPayload }
-  | { op_type: 'create_claim'; payload: CreateClaimPayload };
+  | { op_type: 'create_claim'; payload: CreateClaimPayload }
+  | { op_type: 'delete_relation'; payload: DeleteRelationPayload }
+  | { op_type: 'attach_artifact'; payload: AttachArtifactPayload }
+  | { op_type: 'merge_entities'; payload: MergeEntitiesPayload }
+  | { op_type: 'update_context'; payload: UpdateContextPayload }
+  | { op_type: 'promote_claim'; payload: PromoteClaimPayload }
+  | { op_type: 'propose_relation_type'; payload: ProposeRelationTypePayload };
 
 export interface CreateEntityPayload {
   entity_type: string;
@@ -152,6 +158,42 @@ export interface CreateClaimPayload {
   confidence: number;
   evidence_entity_id: string;
   provenance_run_id?: string;
+}
+
+export interface DeleteRelationPayload {
+  relation_id: string;
+}
+
+export interface AttachArtifactPayload {
+  entity_id: string;
+  kind: string;
+  uri_or_path: string;
+  hash?: string;
+  mime?: string;
+}
+
+export interface MergeEntitiesPayload {
+  source_id: string;
+  target_id: string;
+  merge_strategy: string;
+  confirmed?: boolean;
+}
+
+export interface UpdateContextPayload {
+  key: string;
+  value: unknown;
+}
+
+export interface PromoteClaimPayload {
+  claim_id: string;
+  target_entity_type?: string;
+}
+
+export interface ProposeRelationTypePayload {
+  type_key: string;
+  description: string;
+  expected_from_types?: string[];
+  expected_to_types?: string[];
 }
 
 export interface PatchSet {
@@ -206,7 +248,12 @@ export type EntityType =
   | 'backlog'
   | 'brief'
   | 'event'
-  | 'policy';
+  | 'policy'
+  | 'inbox_item'
+  | 'artifact_type'
+  | 'concept'
+  | 'commitment'
+  | 'issue';
 
 // Canonical field interfaces per entity type
 
@@ -397,3 +444,47 @@ export type BacklogStatus = 'open' | 'triaged' | 'scheduled' | 'closed';
 export type BriefStatus = 'draft' | 'review' | 'approved' | 'archived';
 export type EventStatus = 'proposed' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
 export type PolicyStatus = 'draft' | 'active' | 'under_review' | 'deprecated';
+
+// Wave 4 entity type field interfaces (new entity types from spec v0.7)
+
+export interface InboxItemFields {
+  source_text: string;
+  source_url?: string;
+  suggested_type?: string;
+  suggested_title?: string;
+}
+
+export interface ArtifactTypeFields {
+  artifact_kind: 'attachment' | 'link' | 'export' | 'rendered_doc';
+  uri_or_path: string;
+  hash?: string;
+  mime?: string;
+  parent_entity_id?: string;
+}
+
+export interface ConceptFields {
+  definition?: string;
+  aliases?: string[];
+  domain?: string;
+}
+
+export interface CommitmentFields {
+  owner_id: string;
+  deadline?: string;
+  source_context?: string;
+  tracking_tool?: string;
+}
+
+export interface IssueFields {
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  first_observed?: string;
+  affected_area?: string;
+  owner_id?: string;
+  resolution_notes?: string;
+}
+
+// Wave 4 status types
+export type InboxItemStatus = 'unprocessed' | 'triaged' | 'archived';
+export type CommitmentStatus = 'on_track' | 'at_risk' | 'blocked' | 'fulfilled' | 'broken';
+export type IssueStatus = 'open' | 'investigating' | 'mitigated' | 'resolved' | 'wont_fix';
+// ArtifactType and Concept have no statuses

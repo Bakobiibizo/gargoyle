@@ -1,4 +1,10 @@
+Template Key: dev-prd-to-techspec
 Category: development
+Version: 1.0
+Maturity: workflow
+Produces Entities: spec
+Produces Relations: derived_from
+Prerequisite: spec >= 1 | suggested: dev-requirements-to-spec | Tech spec derivation requires an existing PRD/spec
 Response Format: mixed
 
 ---

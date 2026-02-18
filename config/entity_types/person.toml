@@ -1,0 +1,26 @@
+version = 1
+statuses = ["active", "departed"]
+
+[[fields]]
+name = "email"
+type = "String"
+required = false
+description = "Email address"
+
+[[fields]]
+name = "role"
+type = "String"
+required = false
+description = "Role or job title"
+
+[[fields]]
+name = "department"
+type = "String"
+required = false
+description = "Department"
+
+[[fields]]
+name = "is_external"
+type = "Boolean"
+required = false
+description = "Whether this person is external to the organization"

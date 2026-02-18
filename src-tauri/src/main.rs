@@ -54,8 +54,15 @@ fn main() {
             gargoyle_lib::commands::claim_commands::get_claim,
             gargoyle_lib::commands::claim_commands::promote_claim,
             gargoyle_lib::commands::llm_commands::llm_chat,
+            gargoyle_lib::commands::llm_commands::llm_chat_with_tools,
             gargoyle_lib::commands::llm_commands::llm_complete,
             gargoyle_lib::commands::llm_commands::llm_status,
+            gargoyle_lib::commands::chat_commands::create_chat_session,
+            gargoyle_lib::commands::chat_commands::list_chat_sessions,
+            gargoyle_lib::commands::chat_commands::get_chat_messages,
+            gargoyle_lib::commands::chat_commands::add_chat_message,
+            gargoyle_lib::commands::chat_commands::update_chat_session_title,
+            gargoyle_lib::commands::chat_commands::delete_chat_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

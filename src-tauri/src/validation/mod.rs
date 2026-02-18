@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use self::lock_validator::validate_lock;
 use self::referential_validator::{
-    validate_entity_exists, validate_entity_refs, validate_relation_refs, EntityLookup,
+    validate_entity_exists, validate_entity_refs, validate_relation_refs,
 };
 use self::schema_validator::validate_canonical_fields;
 use self::status_validator::validate_status_transition;
@@ -22,6 +22,16 @@ use self::status_validator::validate_status_transition;
 /// 3. Lock validation   - optimistic concurrency control
 /// 4. Referential validation - FK integrity, entity_ref types, soft-delete checks
 
+/// Result of the validation pipeline, containing both hard errors and soft warnings.
+///
+/// - `errors`: hard validation failures that block the write.
+/// - `warnings`: soft constraint notices (e.g., backward status transitions without reason,
+///   skip transitions) that do NOT block the write but should be surfaced for audit.
+pub struct ValidationOutput {
+    pub errors: Vec<ValidationError>,
+    pub warnings: Vec<String>,
+}
+
 /// Validate a create_entity operation.
 ///
 /// Runs:
@@ -30,27 +40,36 @@ use self::status_validator::validate_status_transition;
 /// - Step 4: Referential validation for EntityRef fields in canonical_fields
 ///
 /// No lock validation (step 3) since this is a new entity.
-pub fn validate_create_entity(
+///
+/// The `lookup` parameter is generic so callers can pass closures that
+/// borrow non-`'static` data (e.g. a database connection reference).
+pub fn validate_create_entity<F>(
     entity_type: &str,
     canonical_fields: &Value,
     field_defs: &[FieldDef],
     status: Option<&str>,
-    lookup: &EntityLookup,
-) -> Vec<ValidationError> {
+    lookup: &F,
+) -> ValidationOutput
+where
+    F: Fn(&str) -> Option<(String, Option<String>)>,
+{
     let mut errors = Vec::new();
+    let mut warnings = Vec::new();
 
     // Step 1: Schema validation
     errors.extend(validate_canonical_fields(canonical_fields, field_defs));
 
     // Step 2: Status validation (null -> new status)
     if let Some(new_status) = status {
-        errors.extend(validate_status_transition(entity_type, None, new_status, None));
+        let status_result = validate_status_transition(entity_type, None, new_status, None);
+        errors.extend(status_result.errors);
+        warnings.extend(status_result.warnings);
     }
 
     // Step 4: Referential integrity for entity_ref fields
     errors.extend(validate_entity_refs(canonical_fields, field_defs, lookup));
 
-    errors
+    ValidationOutput { errors, warnings }
 }
 
 /// Validate an update_entity operation.
@@ -60,7 +79,10 @@ pub fn validate_create_entity(
 /// - Step 2: Status validation (if new status provided)
 /// - Step 3: Lock validation (expected_updated_at vs actual)
 /// - Step 4: Referential validation for EntityRef fields (if canonical_fields provided)
-pub fn validate_update_entity(
+///
+/// The `lookup` parameter is generic so callers can pass closures that
+/// borrow non-`'static` data (e.g. a database connection reference).
+pub fn validate_update_entity<F>(
     entity_type: &str,
     canonical_fields: Option<&Value>,
     field_defs: &[FieldDef],
@@ -69,9 +91,13 @@ pub fn validate_update_entity(
     reason: Option<&str>,
     expected_updated_at: &str,
     actual_updated_at: &str,
-    lookup: &EntityLookup,
-) -> Vec<ValidationError> {
+    lookup: &F,
+) -> ValidationOutput
+where
+    F: Fn(&str) -> Option<(String, Option<String>)>,
+{
     let mut errors = Vec::new();
+    let mut warnings = Vec::new();
 
     // Step 1: Schema validation (only if canonical_fields are being updated)
     if let Some(fields) = canonical_fields {
@@ -80,12 +106,14 @@ pub fn validate_update_entity(
 
     // Step 2: Status validation (only if a new status is provided)
     if let Some(new_s) = new_status {
-        errors.extend(validate_status_transition(
+        let status_result = validate_status_transition(
             entity_type,
             current_status,
             new_s,
             reason,
-        ));
+        );
+        errors.extend(status_result.errors);
+        warnings.extend(status_result.warnings);
     }
 
     // Step 3: Lock validation
@@ -96,7 +124,7 @@ pub fn validate_update_entity(
         errors.extend(validate_entity_refs(fields, field_defs, lookup));
     }
 
-    errors
+    ValidationOutput { errors, warnings }
 }
 
 /// Validate a create_relation operation.
@@ -104,23 +132,35 @@ pub fn validate_update_entity(
 /// Runs:
 /// - Step 4: Referential validation (from_id, to_id exist and are not deleted,
 ///   relation_type is approved if custom)
-pub fn validate_create_relation(
+///
+/// The `lookup` parameter is generic so callers can pass closures that
+/// borrow non-`'static` data (e.g. a database connection reference).
+pub fn validate_create_relation<F>(
     from_id: &str,
     to_id: &str,
     relation_type: &str,
     approved_custom_types: &[String],
-    lookup: &EntityLookup,
-) -> Vec<ValidationError> {
+    lookup: &F,
+) -> Vec<ValidationError>
+where
+    F: Fn(&str) -> Option<(String, Option<String>)>,
+{
     validate_relation_refs(from_id, to_id, relation_type, approved_custom_types, lookup)
 }
 
 /// Validate a create_claim operation.
 ///
 /// Validates that the evidence_entity_id exists and is not soft-deleted.
-pub fn validate_create_claim(
+///
+/// The `lookup` parameter is generic so callers can pass closures that
+/// borrow non-`'static` data (e.g. a database connection reference).
+pub fn validate_create_claim<F>(
     evidence_entity_id: &str,
-    lookup: &EntityLookup,
-) -> Vec<ValidationError> {
+    lookup: &F,
+) -> Vec<ValidationError>
+where
+    F: Fn(&str) -> Option<(String, Option<String>)>,
+{
     let mut errors = Vec::new();
     validate_entity_exists(evidence_entity_id, "evidence_entity_id", lookup, &mut errors);
     errors
@@ -150,12 +190,14 @@ mod tests {
                 field_type: FieldType::Number,
                 required: false,
                 description: None,
+                added_in_version: None,
             },
             FieldDef {
                 name: "target_value".to_string(),
                 field_type: FieldType::Number,
                 required: false,
                 description: None,
+                added_in_version: None,
             },
             FieldDef {
                 name: "trend".to_string(),
@@ -166,18 +208,21 @@ mod tests {
                 ]),
                 required: false,
                 description: None,
+                added_in_version: None,
             },
             FieldDef {
                 name: "data_source".to_string(),
                 field_type: FieldType::String,
                 required: false,
                 description: None,
+                added_in_version: None,
             },
             FieldDef {
                 name: "related_experiment".to_string(),
                 field_type: FieldType::EntityRef("experiment".to_string()),
                 required: false,
                 description: None,
+                added_in_version: None,
             },
         ]
     }
@@ -190,8 +235,9 @@ mod tests {
             "current_value": 42.0,
             "trend": "up"
         });
-        let errors = validate_create_entity("metric", &fields, &metric_field_defs(), Some("active"), &mock_lookup);
-        assert!(errors.is_empty(), "Expected no errors, got: {:?}", errors);
+        let output = validate_create_entity("metric", &fields, &metric_field_defs(), Some("active"), &mock_lookup);
+        assert!(output.errors.is_empty(), "Expected no errors, got: {:?}", output.errors);
+        assert!(output.warnings.is_empty());
     }
 
     #[test]
@@ -200,17 +246,17 @@ mod tests {
             "current_value": "not_a_number",
             "trend": "sideways"
         });
-        let errors = validate_create_entity("metric", &fields, &metric_field_defs(), Some("bogus"), &mock_lookup);
+        let output = validate_create_entity("metric", &fields, &metric_field_defs(), Some("bogus"), &mock_lookup);
         // schema errors: InvalidFieldType for current_value, InvalidEnumValue for trend
         // status error: InvalidStatusTransition for "bogus"
-        assert_eq!(errors.len(), 3);
+        assert_eq!(output.errors.len(), 3);
     }
 
     #[test]
     fn test_create_entity_no_status() {
         let fields = json!({});
-        let errors = validate_create_entity("metric", &fields, &metric_field_defs(), None, &mock_lookup);
-        assert!(errors.is_empty());
+        let output = validate_create_entity("metric", &fields, &metric_field_defs(), None, &mock_lookup);
+        assert!(output.errors.is_empty());
     }
 
     #[test]
@@ -218,8 +264,8 @@ mod tests {
         let fields = json!({
             "related_experiment": "experiment-1"
         });
-        let errors = validate_create_entity("metric", &fields, &metric_field_defs(), None, &mock_lookup);
-        assert!(errors.is_empty());
+        let output = validate_create_entity("metric", &fields, &metric_field_defs(), None, &mock_lookup);
+        assert!(output.errors.is_empty());
     }
 
     #[test]
@@ -227,9 +273,9 @@ mod tests {
         let fields = json!({
             "related_experiment": "nonexistent"
         });
-        let errors = validate_create_entity("metric", &fields, &metric_field_defs(), None, &mock_lookup);
-        assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0].code, ErrorCode::EntityNotFound));
+        let output = validate_create_entity("metric", &fields, &metric_field_defs(), None, &mock_lookup);
+        assert_eq!(output.errors.len(), 1);
+        assert!(matches!(output.errors[0].code, ErrorCode::EntityNotFound));
     }
 
     #[test]
@@ -237,9 +283,9 @@ mod tests {
         let fields = json!({
             "related_experiment": "metric-1"
         });
-        let errors = validate_create_entity("metric", &fields, &metric_field_defs(), None, &mock_lookup);
-        assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0].code, ErrorCode::EntityRefTypeMismatch));
+        let output = validate_create_entity("metric", &fields, &metric_field_defs(), None, &mock_lookup);
+        assert_eq!(output.errors.len(), 1);
+        assert!(matches!(output.errors[0].code, ErrorCode::EntityRefTypeMismatch));
     }
 
     // --- validate_update_entity ---
@@ -247,7 +293,7 @@ mod tests {
     #[test]
     fn test_update_entity_valid() {
         let fields = json!({ "current_value": 100.0 });
-        let errors = validate_update_entity(
+        let output = validate_update_entity(
             "metric",
             Some(&fields),
             &metric_field_defs(),
@@ -258,12 +304,12 @@ mod tests {
             "2025-01-01T00:00:00Z",
             &mock_lookup,
         );
-        assert!(errors.is_empty());
+        assert!(output.errors.is_empty());
     }
 
     #[test]
     fn test_update_entity_lock_conflict() {
-        let errors = validate_update_entity(
+        let output = validate_update_entity(
             "metric",
             None,
             &metric_field_defs(),
@@ -274,13 +320,13 @@ mod tests {
             "2025-01-01T12:00:00Z",
             &mock_lookup,
         );
-        assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0].code, ErrorCode::LockConflict));
+        assert_eq!(output.errors.len(), 1);
+        assert!(matches!(output.errors[0].code, ErrorCode::LockConflict));
     }
 
     #[test]
-    fn test_update_entity_backward_status_without_reason() {
-        let errors = validate_update_entity(
+    fn test_update_entity_backward_status_without_reason_succeeds_with_warning() {
+        let output = validate_update_entity(
             "metric",
             None,
             &metric_field_defs(),
@@ -291,13 +337,16 @@ mod tests {
             "2025-01-01T00:00:00Z",
             &mock_lookup,
         );
-        assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0].code, ErrorCode::InvalidStatusTransition));
+        // Backward transitions are now soft constraints -- no errors
+        assert!(output.errors.is_empty(), "Expected no errors, got: {:?}", output.errors);
+        // But there should be a warning
+        assert_eq!(output.warnings.len(), 1);
+        assert!(output.warnings[0].contains("Backward"));
     }
 
     #[test]
     fn test_update_entity_backward_status_with_reason() {
-        let errors = validate_update_entity(
+        let output = validate_update_entity(
             "metric",
             None,
             &metric_field_defs(),
@@ -308,38 +357,44 @@ mod tests {
             "2025-01-01T00:00:00Z",
             &mock_lookup,
         );
-        assert!(errors.is_empty());
+        assert!(output.errors.is_empty());
+        // Informational warning about the backward transition
+        assert_eq!(output.warnings.len(), 1);
+        assert!(output.warnings[0].contains("reactivating metric"));
     }
 
     #[test]
     fn test_update_entity_multiple_errors() {
         let fields = json!({ "current_value": "bad" });
-        let errors = validate_update_entity(
+        let output = validate_update_entity(
             "metric",
             Some(&fields),
             &metric_field_defs(),
             Some("paused"),
             Some("active"),
-            None, // missing reason for backward transition
+            None, // no reason for backward transition (soft constraint now)
             "old_timestamp",
             "new_timestamp", // lock conflict
             &mock_lookup,
         );
-        // Errors: InvalidFieldType + InvalidStatusTransition + LockConflict = 3
-        assert_eq!(errors.len(), 3);
+        // Errors: InvalidFieldType + LockConflict = 2
+        // (backward transition without reason is now a warning, not an error)
+        assert_eq!(output.errors.len(), 2, "Expected 2 errors, got: {:?}", output.errors);
+        // Plus 1 warning for backward transition
+        assert_eq!(output.warnings.len(), 1);
     }
 
     // --- validate_create_relation ---
 
     #[test]
     fn test_create_relation_valid() {
-        let errors = validate_create_relation("metric-1", "experiment-1", "relates_to", &[], &mock_lookup);
+        let errors = validate_create_relation("metric-1", "experiment-1", "related_to", &[], &mock_lookup);
         assert!(errors.is_empty());
     }
 
     #[test]
     fn test_create_relation_from_not_found() {
-        let errors = validate_create_relation("nonexistent", "experiment-1", "relates_to", &[], &mock_lookup);
+        let errors = validate_create_relation("nonexistent", "experiment-1", "related_to", &[], &mock_lookup);
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0].code, ErrorCode::EntityNotFound));
     }

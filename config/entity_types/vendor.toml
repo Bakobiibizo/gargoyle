@@ -1,0 +1,26 @@
+version = 1
+statuses = ["evaluating", "active", "paused", "terminated"]
+
+[[fields]]
+name = "vendor_type"
+type = { Enum = ["agency", "saas", "contractor", "platform"] }
+required = false
+description = "Type of vendor"
+
+[[fields]]
+name = "contract_value"
+type = "Number"
+required = false
+description = "Value of the vendor contract"
+
+[[fields]]
+name = "contract_end"
+type = "String"
+required = false
+description = "Contract end date"
+
+[[fields]]
+name = "primary_contact"
+type = "String"
+required = false
+description = "Primary contact at the vendor"

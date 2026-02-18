@@ -1,0 +1,26 @@
+version = 1
+statuses = ["draft", "active", "deprecated"]
+
+[[fields]]
+name = "playbook_type"
+type = { Enum = ["sales", "marketing", "ops", "cs", "dev"] }
+required = false
+description = "Type of playbook"
+
+[[fields]]
+name = "trigger_conditions"
+type = "String"
+required = false
+description = "Conditions that trigger this playbook"
+
+[[fields]]
+name = "expected_outcome"
+type = "String"
+required = false
+description = "Expected outcome of executing this playbook"
+
+[[fields]]
+name = "owner"
+type = "String"
+required = false
+description = "Owner of this playbook"

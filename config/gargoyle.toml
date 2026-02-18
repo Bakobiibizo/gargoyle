@@ -1,0 +1,44 @@
+[relation_types]
+canonical = [
+    "part_of",
+    "derived_from",
+    "depends_on",
+    "blocks",
+    "duplicate_of",
+    "implements",
+    "mentions",
+    "supports",
+    "contradicts",
+    "tests",
+    "decides",
+    "evidence_for",
+    "assigned_to",
+    "created_in",
+    "related_to",
+    "targets",
+    "competes_with",
+    "measures",
+    "funds",
+    "enables",
+    "mitigates",
+    "promotes",
+]
+
+[dedup]
+exact_match_confidence = 0.95
+fuzzy_match_confidence = 0.70
+embedding_match_confidence = 0.80
+levenshtein_max_distance = 3
+trigram_similarity_threshold = 0.7
+min_title_length_for_embedding = 4
+embedding_proximity_threshold = 0.92
+
+[indexer]
+embedding_dimensions = 128
+embedding_model = "mock-hash-v1"
+
+[graph]
+related_to_threshold = 0.20
+
+[llm]
+max_tool_iterations = 10

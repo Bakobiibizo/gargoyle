@@ -1,4 +1,9 @@
-Category: organizing
+Template Key: org-project-charter
+Category: org
+Version: 1.0
+Maturity: workflow
+Produces Entities: project
+Produces Relations:
 Response Format: mixed
 
 ---

@@ -1,4 +1,10 @@
-Category: organizing
+Template Key: org-retrospective
+Category: org
+Version: 1.0
+Maturity: diagnostic
+Produces Entities: note, task
+Produces Relations: reviews
+Prerequisite: session >= 1 | Retrospectives need completed sessions to review
 Response Format: mixed
 
 ---

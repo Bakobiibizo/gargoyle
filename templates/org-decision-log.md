@@ -1,4 +1,10 @@
-Category: organizing
+Template Key: org-decision-log
+Category: org
+Version: 1.0
+Maturity: workflow
+Produces Entities: note
+Produces Relations: summarizes
+Prerequisite: decision >= 1 | suggested: dev-adr-writer | Decision log aggregates existing decisions
 Response Format: mixed
 
 ---

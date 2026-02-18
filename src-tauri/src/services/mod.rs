@@ -6,3 +6,5 @@ pub mod claim_service;
 pub mod graph_builder;
 pub mod template_runner;
 pub mod llm;
+pub mod tool_executor;
+pub mod chat_service;

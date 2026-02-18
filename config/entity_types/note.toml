@@ -1,0 +1,20 @@
+version = 1
+statuses = ["active"]
+
+[[fields]]
+name = "context"
+type = "String"
+required = false
+description = "Context for this note"
+
+[[fields]]
+name = "tags"
+type = "String"
+required = false
+description = "Tags associated with this note"
+
+[[fields]]
+name = "linked_entity_id"
+type = { EntityRef = "*" }
+required = false
+description = "Reference to a linked entity"

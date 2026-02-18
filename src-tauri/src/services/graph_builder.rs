@@ -25,7 +25,7 @@ pub struct GraphEdge {
     pub from_id: String,
     pub to_id: String,
     pub relation_type: String,
-    pub weight: f64,
+    pub weight: Option<f64>,
     pub confidence: Option<f64>,
 }
 
@@ -65,7 +65,7 @@ pub struct ProjectionStats {
 // Constants
 // ---------------------------------------------------------------------------
 
-const RELATED_TO_THRESHOLD: f64 = 0.20;
+use crate::config::GargoyleConfig;
 
 // ---------------------------------------------------------------------------
 // Graph projection
@@ -216,7 +216,8 @@ pub fn audit_related_to(conn: &Connection) -> Result<AuditResult> {
         related_to_count as f64 / total_relations as f64
     };
 
-    let threshold_exceeded = ratio >= RELATED_TO_THRESHOLD;
+    let related_to_threshold = GargoyleConfig::global().graph.related_to_threshold;
+    let threshold_exceeded = ratio >= related_to_threshold;
 
     // Breakdown by (from_type, to_type) for related_to relations
     let mut stmt = conn.prepare(
@@ -241,9 +242,10 @@ pub fn audit_related_to(conn: &Connection) -> Result<AuditResult> {
 
     let warning_message = if threshold_exceeded {
         let pct = ratio * 100.0;
+        let threshold_pct = related_to_threshold * 100.0;
         let mut msg = format!(
-            "related_to edges at {:.1}% (threshold: 20%):",
-            pct
+            "related_to edges at {:.1}% (threshold: {:.0}%):",
+            pct, threshold_pct
         );
         for b in &breakdown {
             msg.push_str(&format!("\n  {} \u{2192} {}: {}", b.from_type, b.to_type, b.count));

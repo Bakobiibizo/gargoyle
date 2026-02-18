@@ -71,9 +71,10 @@ fn test_6a_basic_semantic_search() {
     }
 
     // Search for something -- with mock hash embeddings the query text is hashed
-    // and compared via cosine similarity. Use the exact entity text format to
-    // guarantee at least one strong match.
-    let results = IndexerService::search_similar(&conn, "Revenue Growth Rate {}", 5, None).unwrap();
+    // and compared via cosine similarity. Use the exact entity embedding text
+    // format (title + " " + body_md + " " + canonical_fields) to guarantee
+    // at least one strong match.
+    let results = IndexerService::search_similar(&conn, "Revenue Growth Rate  {}", 5, None).unwrap();
 
     assert!(
         !results.is_empty(),

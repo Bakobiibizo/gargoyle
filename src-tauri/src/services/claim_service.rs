@@ -133,8 +133,9 @@ impl ClaimService {
                 status: None,
                 category: None,
                 priority: None,
+                reason: None,
             })],
-            run_id: None,
+            run_id: uuid::Uuid::new_v4().to_string(),
         };
         let result = apply_patch_set(conn, &patch_set)?;
         let entity_id = result.applied[0].entity_id.clone().unwrap();

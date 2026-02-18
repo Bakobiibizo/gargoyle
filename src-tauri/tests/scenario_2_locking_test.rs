@@ -42,7 +42,7 @@ fn test_2a_valid_sequential_update() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
 
     let update_result = apply_patch_set(&conn, &update_set).expect("update should succeed");
@@ -82,7 +82,7 @@ fn test_2b_valid_second_sequential_update() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
     apply_patch_set(&conn, &update1).expect("first update should succeed");
 
@@ -105,7 +105,7 @@ fn test_2b_valid_second_sequential_update() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
     let result2 = apply_patch_set(&conn, &update2).expect("second update should succeed");
     assert_eq!(result2.applied.len(), 1);
@@ -154,7 +154,7 @@ fn test_2c_conflict_stale_expected_updated_at() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
 
     let result = apply_patch_set(&conn, &update_set);
@@ -164,6 +164,11 @@ fn test_2c_conflict_stale_expected_updated_at() {
         GargoyleError::LockConflict { expected, found } => {
             assert_eq!(expected, t1, "Expected should be the stale T1");
             assert_eq!(found, t2, "Found should be the current T2");
+        }
+        GargoyleError::Validation(ve) if matches!(ve.code, gargoyle_lib::error::ErrorCode::LockConflict) => {
+            // Validation pipeline catches lock conflicts with expected/actual in the ValidationError
+            assert_eq!(ve.expected.as_deref(), Some(t1.as_str()), "Expected should be the stale T1");
+            assert_eq!(ve.actual.as_deref(), Some(t2.as_str()), "Actual should be the current T2");
         }
         other => panic!("Expected LockConflict, got: {:?}", other),
     }
@@ -199,7 +204,7 @@ fn test_2d_conflict_parallel_agent_simulation() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
 
     let update2 = PatchSet {
@@ -214,7 +219,7 @@ fn test_2d_conflict_parallel_agent_simulation() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
 
     // Apply first update: should succeed (T1 -> T2)
@@ -229,6 +234,10 @@ fn test_2d_conflict_parallel_agent_simulation() {
         GargoyleError::LockConflict { expected, found } => {
             assert_eq!(expected, t1, "Expected should be the stale T1");
             assert_ne!(found, t1, "Found should be the new timestamp T2");
+        }
+        GargoyleError::Validation(ve) if matches!(ve.code, gargoyle_lib::error::ErrorCode::LockConflict) => {
+            assert_eq!(ve.expected.as_deref(), Some(t1.as_str()), "Expected should be the stale T1");
+            assert_ne!(ve.actual.as_deref(), Some(t1.as_str()), "Actual should be the new timestamp T2");
         }
         other => panic!("Expected LockConflict, got: {:?}", other),
     }
@@ -271,7 +280,7 @@ fn test_2e_recovery_rebase_after_conflict() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
     apply_patch_set(&conn, &update1).expect("Agent 1 should succeed");
 
@@ -288,17 +297,25 @@ fn test_2e_recovery_rebase_after_conflict() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
     let conflict = apply_patch_set(&conn, &update2_stale);
     assert!(
         conflict.is_err(),
         "Agent 2 should fail with stale timestamp"
     );
-    assert!(
-        matches!(conflict.unwrap_err(), GargoyleError::LockConflict { .. }),
-        "Should be LockConflict"
+    // The validation pipeline now catches lock conflicts as
+    // GargoyleError::Validation with ErrorCode::LockConflict.
+    let err = conflict.unwrap_err();
+    let is_lock_conflict = matches!(
+        &err,
+        GargoyleError::LockConflict { .. }
+        | GargoyleError::Validation(gargoyle_lib::error::ValidationError {
+            code: gargoyle_lib::error::ErrorCode::LockConflict,
+            ..
+        })
     );
+    assert!(is_lock_conflict, "Should be LockConflict, got: {:?}", err);
 
     // RECOVERY: Agent 2 re-reads the entity to get current T2
     let entity_after_conflict = StoreService::get_entity(&conn, entity_id).unwrap();
@@ -319,7 +336,7 @@ fn test_2e_recovery_rebase_after_conflict() {
             priority: None,
             reason: None,
         })],
-        run_id: None,
+        run_id: String::new(),
     };
     let rebase_result = apply_patch_set(&conn, &update2_rebased);
     assert!(

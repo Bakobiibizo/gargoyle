@@ -1,0 +1,26 @@
+version = 1
+statuses = ["active", "paused", "retired"]
+
+[[fields]]
+name = "channel_type"
+type = { Enum = ["email", "social", "search", "display", "events", "partnerships", "content", "referral"] }
+required = false
+description = "Type of channel"
+
+[[fields]]
+name = "cost_model"
+type = "String"
+required = false
+description = "Cost model for the channel"
+
+[[fields]]
+name = "primary_metric_id"
+type = { EntityRef = "metric" }
+required = false
+description = "Primary metric tracked for this channel"
+
+[[fields]]
+name = "budget_allocation"
+type = "Number"
+required = false
+description = "Budget allocated to this channel"

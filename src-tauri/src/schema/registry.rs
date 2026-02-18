@@ -1,31 +1,10 @@
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use crate::config::GargoyleConfig;
+use crate::config::entity_type_config::EntityTypeDef;
 use crate::error::{ErrorCode, ValidationError};
 use crate::schema::field_def::{FieldDef, FieldType};
-use crate::schema::types::{
-    experiment::{experiment_current_version, experiment_fields, EXPERIMENT_STATUSES},
-    metric::{metric_current_version, metric_fields, METRIC_STATUSES},
-    result::{result_current_version, result_fields, RESULT_STATUSES},
-    task::{task_current_version, task_fields, TASK_STATUSES},
-    project::{project_current_version, project_fields, PROJECT_STATUSES},
-    decision::{decision_current_version, decision_fields, DECISION_STATUSES},
-    person::{person_current_version, person_fields, PERSON_STATUSES},
-    note::{note_current_version, note_fields, NOTE_STATUSES},
-    session::{session_current_version, session_fields, SESSION_STATUSES},
-    campaign::{campaign_current_version, campaign_fields, CAMPAIGN_STATUSES},
-    audience::{audience_current_version, audience_fields, AUDIENCE_STATUSES},
-    competitor::{competitor_current_version, competitor_fields, COMPETITOR_STATUSES},
-    channel::{channel_current_version, channel_fields, CHANNEL_STATUSES},
-    spec::{spec_current_version, spec_fields, SPEC_STATUSES},
-    budget::{budget_current_version, budget_fields, BUDGET_STATUSES},
-    vendor::{vendor_current_version, vendor_fields, VENDOR_STATUSES},
-    playbook::{playbook_current_version, playbook_fields, PLAYBOOK_STATUSES},
-    taxonomy::{taxonomy_current_version, taxonomy_fields, TAXONOMY_STATUSES},
-    backlog::{backlog_current_version, backlog_fields, BACKLOG_STATUSES},
-    brief::{brief_current_version, brief_fields, BRIEF_STATUSES},
-    event::{event_current_version, event_fields, EVENT_STATUSES},
-    policy::{policy_current_version, policy_fields, POLICY_STATUSES},
-};
 use crate::schema::version::SchemaVersion;
 
 /// Global singleton schema registry, initialized on first access.
@@ -33,19 +12,28 @@ static REGISTRY: OnceLock<SchemaRegistry> = OnceLock::new();
 
 /// The SchemaRegistry is the central authority for entity type schemas.
 /// It provides field definitions, version tracking, and canonical_fields validation
-/// for all known entity types (metric, experiment, result).
+/// for all known entity types.
 ///
-/// The registry uses a static/lazy approach -- no database table is needed.
-/// Schemas are defined in code and versioned explicitly.
+/// Entity types are loaded from configuration (TOML files or hardcoded defaults).
 pub struct SchemaRegistry {
     schema_version: SchemaVersion,
+    /// Entity type definitions keyed by type name.
+    entity_types: HashMap<String, EntityTypeDef>,
 }
 
 impl SchemaRegistry {
-    /// Creates a new SchemaRegistry with current versions for all entity types.
+    /// Creates a new SchemaRegistry from the global config.
     pub fn new() -> Self {
+        let config = GargoyleConfig::global();
+        Self::from_entity_types(config.entity_types.clone())
+    }
+
+    /// Creates a SchemaRegistry from a given set of entity type definitions.
+    pub fn from_entity_types(entity_types: HashMap<String, EntityTypeDef>) -> Self {
+        let schema_version = SchemaVersion::from_entity_types(&entity_types);
         Self {
-            schema_version: SchemaVersion::new(),
+            schema_version,
+            entity_types,
         }
     }
 
@@ -57,91 +45,26 @@ impl SchemaRegistry {
     /// Returns the field definitions for a given entity type and version.
     /// Returns None if the entity type or version is not recognized.
     pub fn get_schema(&self, entity_type: &str, version: i32) -> Option<Vec<FieldDef>> {
-        match entity_type {
-            "metric" => metric_fields(version),
-            "experiment" => experiment_fields(version),
-            "result" => result_fields(version),
-            "task" => task_fields(version),
-            "project" => project_fields(version),
-            "decision" => decision_fields(version),
-            "person" => person_fields(version),
-            "note" => note_fields(version),
-            "session" => session_fields(version),
-            "campaign" => campaign_fields(version),
-            "audience" => audience_fields(version),
-            "competitor" => competitor_fields(version),
-            "channel" => channel_fields(version),
-            "spec" => spec_fields(version),
-            "budget" => budget_fields(version),
-            "vendor" => vendor_fields(version),
-            "playbook" => playbook_fields(version),
-            "taxonomy" => taxonomy_fields(version),
-            "backlog" => backlog_fields(version),
-            "brief" => brief_fields(version),
-            "event" => event_fields(version),
-            "policy" => policy_fields(version),
-            _ => None,
+        let def = self.entity_types.get(entity_type)?;
+        if version == def.version {
+            Some(def.field_defs())
+        } else {
+            None
         }
     }
 
     /// Returns the current (latest) schema version for the given entity type.
     /// Returns None if the entity type is not recognized.
     pub fn current_version(&self, entity_type: &str) -> Option<i32> {
-        match entity_type {
-            "metric" => Some(metric_current_version()),
-            "experiment" => Some(experiment_current_version()),
-            "result" => Some(result_current_version()),
-            "task" => Some(task_current_version()),
-            "project" => Some(project_current_version()),
-            "decision" => Some(decision_current_version()),
-            "person" => Some(person_current_version()),
-            "note" => Some(note_current_version()),
-            "session" => Some(session_current_version()),
-            "campaign" => Some(campaign_current_version()),
-            "audience" => Some(audience_current_version()),
-            "competitor" => Some(competitor_current_version()),
-            "channel" => Some(channel_current_version()),
-            "spec" => Some(spec_current_version()),
-            "budget" => Some(budget_current_version()),
-            "vendor" => Some(vendor_current_version()),
-            "playbook" => Some(playbook_current_version()),
-            "taxonomy" => Some(taxonomy_current_version()),
-            "backlog" => Some(backlog_current_version()),
-            "brief" => Some(brief_current_version()),
-            "event" => Some(event_current_version()),
-            "policy" => Some(policy_current_version()),
-            _ => None,
-        }
+        self.entity_types.get(entity_type).map(|def| def.version)
     }
 
     /// Returns the valid status values for the given entity type.
     /// Returns None if the entity type is not recognized.
-    pub fn valid_statuses(&self, entity_type: &str) -> Option<&'static [&'static str]> {
-        match entity_type {
-            "metric" => Some(METRIC_STATUSES),
-            "experiment" => Some(EXPERIMENT_STATUSES),
-            "result" => Some(RESULT_STATUSES),
-            "task" => Some(TASK_STATUSES),
-            "project" => Some(PROJECT_STATUSES),
-            "decision" => Some(DECISION_STATUSES),
-            "person" => Some(PERSON_STATUSES),
-            "note" => Some(NOTE_STATUSES),
-            "session" => Some(SESSION_STATUSES),
-            "campaign" => Some(CAMPAIGN_STATUSES),
-            "audience" => Some(AUDIENCE_STATUSES),
-            "competitor" => Some(COMPETITOR_STATUSES),
-            "channel" => Some(CHANNEL_STATUSES),
-            "spec" => Some(SPEC_STATUSES),
-            "budget" => Some(BUDGET_STATUSES),
-            "vendor" => Some(VENDOR_STATUSES),
-            "playbook" => Some(PLAYBOOK_STATUSES),
-            "taxonomy" => Some(TAXONOMY_STATUSES),
-            "backlog" => Some(BACKLOG_STATUSES),
-            "brief" => Some(BRIEF_STATUSES),
-            "event" => Some(EVENT_STATUSES),
-            "policy" => Some(POLICY_STATUSES),
-            _ => None,
-        }
+    pub fn valid_statuses(&self, entity_type: &str) -> Option<Vec<String>> {
+        self.entity_types
+            .get(entity_type)
+            .map(|def| def.statuses.clone())
     }
 
     /// Returns a reference to the internal SchemaVersion tracker.
@@ -364,9 +287,79 @@ fn validate_field_type(
                 }
             }
         }
+        FieldType::Date => {
+            if !value.is_string() {
+                errors.push(ValidationError {
+                    code: ErrorCode::InvalidFieldType,
+                    field_path,
+                    message: format!(
+                        "Field '{}' expected date string (ISO 8601), got {}",
+                        field_name,
+                        json_type_name(value)
+                    ),
+                    expected: Some("string (ISO 8601 date)".to_string()),
+                    actual: Some(json_type_name(value).to_string()),
+                });
+            }
+        }
+        FieldType::DateTime => {
+            if !value.is_string() {
+                errors.push(ValidationError {
+                    code: ErrorCode::InvalidFieldType,
+                    field_path,
+                    message: format!(
+                        "Field '{}' expected datetime string (ISO 8601), got {}",
+                        field_name,
+                        json_type_name(value)
+                    ),
+                    expected: Some("string (ISO 8601 datetime)".to_string()),
+                    actual: Some(json_type_name(value).to_string()),
+                });
+            }
+        }
+        FieldType::Json => {
+            // Json type accepts any valid JSON value -- no type validation needed.
+        }
+        FieldType::Array(items_type) => {
+            match value.as_array() {
+                Some(arr) => {
+                    for (i, item) in arr.iter().enumerate() {
+                        let item_field_name = format!("{}[{}]", field_name, i);
+                        let item_field_type = match items_type.as_str() {
+                            "string" => FieldType::String,
+                            "number" => FieldType::Number,
+                            "boolean" => FieldType::Boolean,
+                            "date" => FieldType::Date,
+                            "datetime" => FieldType::DateTime,
+                            "json" => FieldType::Json,
+                            _ => {
+                                continue;
+                            }
+                        };
+                        validate_field_type(
+                            &item_field_name,
+                            &item_field_type,
+                            item,
+                            errors,
+                        );
+                    }
+                }
+                None => {
+                    errors.push(ValidationError {
+                        code: ErrorCode::InvalidFieldType,
+                        field_path,
+                        message: format!(
+                            "Field '{}' expected array, got {}",
+                            field_name,
+                            json_type_name(value)
+                        ),
+                        expected: Some("array".to_string()),
+                        actual: Some(json_type_name(value).to_string()),
+                    });
+                }
+            }
+        }
         FieldType::EntityRef(_target_type) => {
-            // EntityRef values must be strings (the referenced entity ID).
-            // Actual referential integrity checking is deferred to the referential_validator.
             if !value.is_string() {
                 errors.push(ValidationError {
                     code: ErrorCode::InvalidFieldType,
@@ -379,6 +372,41 @@ fn validate_field_type(
                     expected: Some("string (entity ID)".to_string()),
                     actual: Some(json_type_name(value).to_string()),
                 });
+            }
+        }
+        FieldType::EntityRefArray(_ref_type) => {
+            match value.as_array() {
+                Some(arr) => {
+                    for (i, item) in arr.iter().enumerate() {
+                        if !item.is_string() {
+                            errors.push(ValidationError {
+                                code: ErrorCode::InvalidFieldType,
+                                field_path: format!("canonical_fields.{}[{}]", field_name, i),
+                                message: format!(
+                                    "Field '{}[{}]' expected string (entity ID), got {}",
+                                    field_name,
+                                    i,
+                                    json_type_name(item)
+                                ),
+                                expected: Some("string (entity ID)".to_string()),
+                                actual: Some(json_type_name(item).to_string()),
+                            });
+                        }
+                    }
+                }
+                None => {
+                    errors.push(ValidationError {
+                        code: ErrorCode::InvalidFieldType,
+                        field_path,
+                        message: format!(
+                            "Field '{}' expected array of entity references, got {}",
+                            field_name,
+                            json_type_name(value)
+                        ),
+                        expected: Some("array".to_string()),
+                        actual: Some(json_type_name(value).to_string()),
+                    });
+                }
             }
         }
     }
@@ -402,7 +430,9 @@ mod tests {
     use serde_json::json;
 
     fn registry() -> SchemaRegistry {
-        SchemaRegistry::new()
+        SchemaRegistry::from_entity_types(
+            crate::config::GargoyleConfig::defaults().entity_types,
+        )
     }
 
     // -- get_schema tests --
@@ -486,7 +516,7 @@ mod tests {
     fn test_valid_statuses_result() {
         let reg = registry();
         let statuses = reg.valid_statuses("result").unwrap();
-        assert_eq!(statuses, &["draft", "final", "archived"]);
+        assert_eq!(statuses, &["preliminary", "final", "invalidated"]);
     }
 
     #[test]
@@ -530,7 +560,7 @@ mod tests {
         let fields = json!({
             "hypothesis": "Changing the button color increases conversions",
             "funnel_position": "checkout",
-            "source_experiment_id": "exp-uuid-123"
+            "primary_metric": "conversion_rate"
         });
         let errors = reg.validate_canonical_fields("experiment", 1, &fields);
         assert!(errors.is_empty(), "Valid experiment fields should produce no errors: {:?}", errors);
@@ -540,9 +570,9 @@ mod tests {
     fn test_validate_valid_result_fields() {
         let reg = registry();
         let fields = json!({
-            "findings": "Button color had no significant effect",
-            "methodology": "A/B test with 10k users",
-            "confidence_level": 0.95
+            "source_experiment_id": "exp-uuid-123",
+            "outcome": "Button color had no significant effect",
+            "confidence_level": "high"
         });
         let errors = reg.validate_canonical_fields("result", 1, &fields);
         assert!(errors.is_empty(), "Valid result fields should produce no errors: {:?}", errors);
@@ -590,19 +620,20 @@ mod tests {
     fn test_validate_wrong_type_number_for_string() {
         let reg = registry();
         let fields = json!({
-            "findings": 12345
+            "outcome": 12345
         });
         let errors = reg.validate_canonical_fields("result", 1, &fields);
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0].code, ErrorCode::InvalidFieldType));
-        assert_eq!(errors[0].field_path, "canonical_fields.findings");
+        assert_eq!(errors[0].field_path, "canonical_fields.outcome");
     }
 
     #[test]
-    fn test_validate_wrong_type_bool_for_number() {
+    fn test_validate_wrong_type_bool_for_enum() {
         let reg = registry();
         let fields = json!({
-            "confidence_level": true
+            "confidence_level": true,
+            "outcome": "Test outcome"
         });
         let errors = reg.validate_canonical_fields("result", 1, &fields);
         assert_eq!(errors.len(), 1);
@@ -641,9 +672,10 @@ mod tests {
     fn test_validate_entity_ref_string_ok() {
         let reg = registry();
         let fields = json!({
-            "source_experiment_id": "some-uuid"
+            "project_id": "some-uuid",
+            "effort_estimate": "M"
         });
-        let errors = reg.validate_canonical_fields("experiment", 1, &fields);
+        let errors = reg.validate_canonical_fields("task", 1, &fields);
         assert!(errors.is_empty(), "Entity ref as string should be valid");
     }
 
@@ -651,9 +683,10 @@ mod tests {
     fn test_validate_entity_ref_wrong_type() {
         let reg = registry();
         let fields = json!({
-            "source_experiment_id": 42
+            "project_id": 42,
+            "effort_estimate": "M"
         });
-        let errors = reg.validate_canonical_fields("experiment", 1, &fields);
+        let errors = reg.validate_canonical_fields("task", 1, &fields);
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0].code, ErrorCode::InvalidFieldType));
     }
@@ -752,5 +785,217 @@ mod tests {
         });
         let errors = reg.validate_canonical_fields("metric", 1, &fields);
         assert!(errors.is_empty(), "Integer values should be valid numbers");
+    }
+
+    // -- validate_field_type: Date --
+
+    #[test]
+    fn test_validate_date_valid_string() {
+        let mut errors = Vec::new();
+        validate_field_type("start_date", &FieldType::Date, &json!("2025-01-15"), &mut errors);
+        assert!(errors.is_empty(), "ISO date string should be valid for Date type");
+    }
+
+    #[test]
+    fn test_validate_date_any_string_accepted() {
+        let mut errors = Vec::new();
+        validate_field_type("start_date", &FieldType::Date, &json!("not-a-date"), &mut errors);
+        assert!(errors.is_empty(), "Lenient Date validation should accept any string");
+    }
+
+    #[test]
+    fn test_validate_date_wrong_type() {
+        let mut errors = Vec::new();
+        validate_field_type("start_date", &FieldType::Date, &json!(12345), &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0].code, ErrorCode::InvalidFieldType));
+        assert!(errors[0].message.contains("date string"));
+    }
+
+    // -- validate_field_type: DateTime --
+
+    #[test]
+    fn test_validate_datetime_valid_string() {
+        let mut errors = Vec::new();
+        validate_field_type(
+            "created_at",
+            &FieldType::DateTime,
+            &json!("2025-01-15T10:30:00Z"),
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "ISO datetime string should be valid for DateTime type");
+    }
+
+    #[test]
+    fn test_validate_datetime_any_string_accepted() {
+        let mut errors = Vec::new();
+        validate_field_type("created_at", &FieldType::DateTime, &json!("any-string"), &mut errors);
+        assert!(errors.is_empty(), "Lenient DateTime validation should accept any string");
+    }
+
+    #[test]
+    fn test_validate_datetime_wrong_type() {
+        let mut errors = Vec::new();
+        validate_field_type("created_at", &FieldType::DateTime, &json!(true), &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0].code, ErrorCode::InvalidFieldType));
+        assert!(errors[0].message.contains("datetime string"));
+    }
+
+    // -- validate_field_type: Json --
+
+    #[test]
+    fn test_validate_json_object() {
+        let mut errors = Vec::new();
+        validate_field_type("metadata", &FieldType::Json, &json!({"key": "value"}), &mut errors);
+        assert!(errors.is_empty(), "JSON object should be valid for Json type");
+    }
+
+    #[test]
+    fn test_validate_json_array() {
+        let mut errors = Vec::new();
+        validate_field_type("metadata", &FieldType::Json, &json!([1, 2, 3]), &mut errors);
+        assert!(errors.is_empty(), "JSON array should be valid for Json type");
+    }
+
+    #[test]
+    fn test_validate_json_string() {
+        let mut errors = Vec::new();
+        validate_field_type("metadata", &FieldType::Json, &json!("hello"), &mut errors);
+        assert!(errors.is_empty(), "JSON string should be valid for Json type");
+    }
+
+    #[test]
+    fn test_validate_json_number() {
+        let mut errors = Vec::new();
+        validate_field_type("metadata", &FieldType::Json, &json!(42), &mut errors);
+        assert!(errors.is_empty(), "JSON number should be valid for Json type");
+    }
+
+    #[test]
+    fn test_validate_json_boolean() {
+        let mut errors = Vec::new();
+        validate_field_type("metadata", &FieldType::Json, &json!(true), &mut errors);
+        assert!(errors.is_empty(), "JSON boolean should be valid for Json type");
+    }
+
+    // -- validate_field_type: Array --
+
+    #[test]
+    fn test_validate_array_of_strings_valid() {
+        let mut errors = Vec::new();
+        validate_field_type(
+            "tags",
+            &FieldType::Array("string".to_string()),
+            &json!(["tag1", "tag2", "tag3"]),
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "Array of strings should be valid for Array(string)");
+    }
+
+    #[test]
+    fn test_validate_array_of_numbers_valid() {
+        let mut errors = Vec::new();
+        validate_field_type(
+            "scores",
+            &FieldType::Array("number".to_string()),
+            &json!([1, 2.5, 3]),
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "Array of numbers should be valid for Array(number)");
+    }
+
+    #[test]
+    fn test_validate_array_empty_valid() {
+        let mut errors = Vec::new();
+        validate_field_type(
+            "tags",
+            &FieldType::Array("string".to_string()),
+            &json!([]),
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "Empty array should be valid for Array type");
+    }
+
+    #[test]
+    fn test_validate_array_wrong_element_type() {
+        let mut errors = Vec::new();
+        validate_field_type(
+            "tags",
+            &FieldType::Array("string".to_string()),
+            &json!(["ok", 42, "also_ok"]),
+            &mut errors,
+        );
+        assert_eq!(errors.len(), 1, "One invalid element should produce one error");
+        assert!(matches!(errors[0].code, ErrorCode::InvalidFieldType));
+        assert!(errors[0].field_path.contains("tags[1]"));
+    }
+
+    #[test]
+    fn test_validate_array_not_array() {
+        let mut errors = Vec::new();
+        validate_field_type(
+            "tags",
+            &FieldType::Array("string".to_string()),
+            &json!("not-an-array"),
+            &mut errors,
+        );
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0].code, ErrorCode::InvalidFieldType));
+        assert!(errors[0].message.contains("expected array"));
+    }
+
+    // -- validate_field_type: EntityRefArray --
+
+    #[test]
+    fn test_validate_entity_ref_array_valid() {
+        let mut errors = Vec::new();
+        validate_field_type(
+            "related_tasks",
+            &FieldType::EntityRefArray("task".to_string()),
+            &json!(["uuid-1", "uuid-2", "uuid-3"]),
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "Array of string UUIDs should be valid for EntityRefArray");
+    }
+
+    #[test]
+    fn test_validate_entity_ref_array_empty() {
+        let mut errors = Vec::new();
+        validate_field_type(
+            "related_tasks",
+            &FieldType::EntityRefArray("task".to_string()),
+            &json!([]),
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "Empty array should be valid for EntityRefArray");
+    }
+
+    #[test]
+    fn test_validate_entity_ref_array_wrong_element_type() {
+        let mut errors = Vec::new();
+        validate_field_type(
+            "related_tasks",
+            &FieldType::EntityRefArray("task".to_string()),
+            &json!(["uuid-1", 42, "uuid-3"]),
+            &mut errors,
+        );
+        assert_eq!(errors.len(), 1, "Non-string element should produce error");
+        assert!(matches!(errors[0].code, ErrorCode::InvalidFieldType));
+        assert!(errors[0].field_path.contains("related_tasks[1]"));
+    }
+
+    #[test]
+    fn test_validate_entity_ref_array_not_array() {
+        let mut errors = Vec::new();
+        validate_field_type(
+            "related_tasks",
+            &FieldType::EntityRefArray("task".to_string()),
+            &json!("not-an-array"),
+            &mut errors,
+        );
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0].code, ErrorCode::InvalidFieldType));
+        assert!(errors[0].message.contains("expected array of entity references"));
     }
 }

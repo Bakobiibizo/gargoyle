@@ -164,6 +164,61 @@ fn validate_field_type(
                 }
             }
         }
+        FieldType::Date => {
+            // Date values must be strings. Lenient validation for now.
+            if !value.is_string() {
+                errors.push(ValidationError {
+                    code: ErrorCode::InvalidFieldType,
+                    field_path,
+                    message: format!("Field '{}' must be a date string (ISO 8601)", field_name),
+                    expected: Some("string (ISO 8601 date)".to_string()),
+                    actual: Some(json_type_name(value).to_string()),
+                });
+            }
+        }
+        FieldType::DateTime => {
+            // DateTime values must be strings. Lenient validation for now.
+            if !value.is_string() {
+                errors.push(ValidationError {
+                    code: ErrorCode::InvalidFieldType,
+                    field_path,
+                    message: format!("Field '{}' must be a datetime string (ISO 8601)", field_name),
+                    expected: Some("string (ISO 8601 datetime)".to_string()),
+                    actual: Some(json_type_name(value).to_string()),
+                });
+            }
+        }
+        FieldType::Json => {
+            // Json type accepts any valid JSON value -- no type validation needed.
+        }
+        FieldType::Array(items_type) => {
+            match value.as_array() {
+                Some(arr) => {
+                    for (i, item) in arr.iter().enumerate() {
+                        let item_field_name = format!("{}[{}]", field_name, i);
+                        let item_field_type = match items_type.as_str() {
+                            "string" => FieldType::String,
+                            "number" => FieldType::Number,
+                            "boolean" => FieldType::Boolean,
+                            "date" => FieldType::Date,
+                            "datetime" => FieldType::DateTime,
+                            "json" => FieldType::Json,
+                            _ => continue,
+                        };
+                        validate_field_type(&item_field_name, item, &item_field_type, errors);
+                    }
+                }
+                None => {
+                    errors.push(ValidationError {
+                        code: ErrorCode::InvalidFieldType,
+                        field_path,
+                        message: format!("Field '{}' must be an array", field_name),
+                        expected: Some("array".to_string()),
+                        actual: Some(json_type_name(value).to_string()),
+                    });
+                }
+            }
+        }
         FieldType::EntityRef(_) => {
             // EntityRef validation is handled by referential_validator (step 4).
             // Here we only check it's a string (the ID format).
@@ -175,6 +230,37 @@ fn validate_field_type(
                     expected: Some("string (entity ID)".to_string()),
                     actual: Some(json_type_name(value).to_string()),
                 });
+            }
+        }
+        FieldType::EntityRefArray(_ref_type) => {
+            // EntityRefArray values must be JSON arrays of strings.
+            // Referential integrity is deferred to step 4.
+            match value.as_array() {
+                Some(arr) => {
+                    for (i, item) in arr.iter().enumerate() {
+                        if !item.is_string() {
+                            errors.push(ValidationError {
+                                code: ErrorCode::InvalidFieldType,
+                                field_path: format!("canonical_fields.{}[{}]", field_name, i),
+                                message: format!(
+                                    "Field '{}[{}]' must be a string (entity ID), got {}",
+                                    field_name, i, json_type_name(item)
+                                ),
+                                expected: Some("string (entity ID)".to_string()),
+                                actual: Some(json_type_name(item).to_string()),
+                            });
+                        }
+                    }
+                }
+                None => {
+                    errors.push(ValidationError {
+                        code: ErrorCode::InvalidFieldType,
+                        field_path,
+                        message: format!("Field '{}' must be an array of entity references", field_name),
+                        expected: Some("array".to_string()),
+                        actual: Some(json_type_name(value).to_string()),
+                    });
+                }
             }
         }
     }
@@ -198,8 +284,13 @@ fn field_type_display(ft: &FieldType) -> String {
         FieldType::String => "string".to_string(),
         FieldType::Number => "number".to_string(),
         FieldType::Boolean => "boolean".to_string(),
+        FieldType::Date => "date (ISO 8601)".to_string(),
+        FieldType::DateTime => "datetime (ISO 8601)".to_string(),
+        FieldType::Json => "json".to_string(),
+        FieldType::Array(items_type) => format!("array({})", items_type),
         FieldType::Enum(values) => format!("one of [{}]", values.join(", ")),
         FieldType::EntityRef(target) => format!("entity_ref({})", target),
+        FieldType::EntityRefArray(target) => format!("entity_ref_array({})", target),
     }
 }
 
@@ -215,30 +306,35 @@ mod tests {
                 field_type: FieldType::String,
                 required: true,
                 description: None,
+                added_in_version: None,
             },
             FieldDef {
                 name: "count".to_string(),
                 field_type: FieldType::Number,
                 required: false,
                 description: None,
+                added_in_version: None,
             },
             FieldDef {
                 name: "active".to_string(),
                 field_type: FieldType::Boolean,
                 required: false,
                 description: None,
+                added_in_version: None,
             },
             FieldDef {
                 name: "priority".to_string(),
                 field_type: FieldType::Enum(vec!["low".to_string(), "medium".to_string(), "high".to_string()]),
                 required: false,
                 description: None,
+                added_in_version: None,
             },
             FieldDef {
                 name: "parent_id".to_string(),
                 field_type: FieldType::EntityRef("metric".to_string()),
                 required: false,
                 description: None,
+                added_in_version: None,
             },
         ]
     }

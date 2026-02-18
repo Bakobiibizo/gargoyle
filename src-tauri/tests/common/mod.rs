@@ -41,12 +41,12 @@ pub fn insert_test_metric(conn: &Connection, id: &str, title: &str) -> String {
 
 /// Insert a test experiment
 pub fn insert_test_experiment(conn: &Connection, id: &str, title: &str) -> String {
-    insert_test_entity(conn, id, "experiment", title, "manual", r#"{"hypothesis": "test"}"#)
+    insert_test_entity(conn, id, "experiment", title, "manual", r#"{"hypothesis": "test", "primary_metric": "conversion_rate"}"#)
 }
 
 /// Insert a test result entity
 pub fn insert_test_result(conn: &Connection, id: &str, title: &str) -> String {
-    insert_test_entity(conn, id, "result", title, "manual", r#"{"findings": "test"}"#)
+    insert_test_entity(conn, id, "result", title, "manual", r#"{"outcome": "test"}"#)
 }
 
 /// Soft-delete an entity
@@ -65,15 +65,6 @@ pub fn get_updated_at(conn: &Connection, id: &str) -> String {
         rusqlite::params![id],
         |row| row.get(0),
     ).expect("Failed to get updated_at")
-}
-
-/// Count entities of a given type
-pub fn count_entities(conn: &Connection, entity_type: &str) -> i64 {
-    conn.query_row(
-        "SELECT COUNT(*) FROM entities WHERE entity_type = ?1 AND deleted_at IS NULL",
-        rusqlite::params![entity_type],
-        |row| row.get(0),
-    ).expect("Failed to count entities")
 }
 
 /// Get entity by ID

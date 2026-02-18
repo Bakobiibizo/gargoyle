@@ -1,0 +1,26 @@
+version = 1
+statuses = ["draft", "review", "approved", "superseded"]
+
+[[fields]]
+name = "spec_type"
+type = { Enum = ["technical", "product", "design", "process"] }
+required = false
+description = "Type of specification"
+
+[[fields]]
+name = "version"
+type = "String"
+required = false
+description = "Version of the specification"
+
+[[fields]]
+name = "approval_status"
+type = "String"
+required = false
+description = "Approval status of the specification"
+
+[[fields]]
+name = "author"
+type = "String"
+required = false
+description = "Author of the specification"

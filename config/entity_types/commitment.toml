@@ -1,0 +1,26 @@
+version = 1
+statuses = ["on_track", "at_risk", "blocked", "fulfilled", "broken"]
+
+[[fields]]
+name = "owner_id"
+type = "String"
+required = true
+description = "Person responsible for this commitment"
+
+[[fields]]
+name = "deadline"
+type = "String"
+required = false
+description = "Deadline for the commitment"
+
+[[fields]]
+name = "source_context"
+type = "String"
+required = false
+description = "Context in which the commitment was made"
+
+[[fields]]
+name = "tracking_tool"
+type = "String"
+required = false
+description = "Tool used to track this commitment"

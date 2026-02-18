@@ -1,0 +1,26 @@
+version = 1
+statuses = ["draft", "validated", "deprecated"]
+
+[[fields]]
+name = "segment_criteria"
+type = "String"
+required = false
+description = "Criteria defining this audience segment"
+
+[[fields]]
+name = "estimated_size"
+type = "Number"
+required = false
+description = "Estimated size of the audience"
+
+[[fields]]
+name = "icp_id"
+type = { EntityRef = "person" }
+required = false
+description = "Ideal customer profile reference"
+
+[[fields]]
+name = "channels"
+type = "String"
+required = false
+description = "Channels to reach this audience"

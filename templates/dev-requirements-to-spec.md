@@ -1,4 +1,9 @@
+Template Key: dev-requirements-to-spec
 Category: development
+Version: 1.0
+Maturity: workflow
+Produces Entities: spec
+Produces Relations:
 Response Format: mixed
 
 ---

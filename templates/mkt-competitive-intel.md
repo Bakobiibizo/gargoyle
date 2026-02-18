@@ -1,4 +1,9 @@
+Template Key: mkt-competitive-intel
 Category: marketing
+Version: 1.0
+Maturity: foundational
+Produces Entities: competitor
+Produces Relations: competes_with
 Response Format: mixed
 
 ---

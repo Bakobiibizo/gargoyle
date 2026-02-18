@@ -1,0 +1,38 @@
+version = 1
+statuses = ["planning", "live", "paused", "completed", "cancelled"]
+
+[[fields]]
+name = "objective"
+type = "String"
+required = false
+description = "Campaign objective"
+
+[[fields]]
+name = "budget"
+type = "Number"
+required = false
+description = "Budget allocated to the campaign"
+
+[[fields]]
+name = "channel"
+type = { Enum = ["email", "paid_social", "paid_search", "organic", "events", "partnerships"] }
+required = false
+description = "Primary channel for the campaign"
+
+[[fields]]
+name = "start_date"
+type = "String"
+required = false
+description = "Start date of the campaign"
+
+[[fields]]
+name = "end_date"
+type = "String"
+required = false
+description = "End date of the campaign"
+
+[[fields]]
+name = "target_audience_id"
+type = { EntityRef = "audience" }
+required = false
+description = "Target audience for the campaign"

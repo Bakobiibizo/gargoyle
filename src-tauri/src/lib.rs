@@ -9,6 +9,7 @@ pub mod patch;
 pub mod validation;
 pub mod services;
 pub mod commands;
+pub mod config;
 
 pub struct AppState {
     pub db: Mutex<Option<Connection>>,

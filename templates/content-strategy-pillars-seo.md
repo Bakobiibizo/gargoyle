@@ -1,4 +1,9 @@
+Template Key: content-strategy-pillars-seo
 Category: content
+Version: 1.0
+Maturity: advanced
+Produces Entities: taxonomy, note
+Produces Relations: categorizes
 Response Format: mixed
 
 ---

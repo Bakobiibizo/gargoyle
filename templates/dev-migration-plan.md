@@ -1,4 +1,10 @@
+Template Key: dev-migration-plan
 Category: development
+Version: 1.0
+Maturity: workflow
+Produces Entities: spec, task
+Produces Relations: migrates
+Prerequisite: spec >= 1 | suggested: dev-requirements-to-spec | Migration plans need a spec defining the target state
 Response Format: mixed
 
 ---

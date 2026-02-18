@@ -1,4 +1,10 @@
+Template Key: dev-api-design
 Category: development
+Version: 1.0
+Maturity: workflow
+Produces Entities: spec
+Produces Relations: implements
+Prerequisite: spec >= 1 | suggested: dev-requirements-to-spec | API design requires a spec to define endpoints against
 Response Format: mixed
 
 ---

@@ -6,7 +6,7 @@ pub struct Relation {
     pub from_id: String,
     pub to_id: String,
     pub relation_type: String,
-    pub weight: f64,
+    pub weight: Option<f64>,
     pub confidence: Option<f64>,
     pub provenance_run_id: Option<String>,
     pub created_at: String,

@@ -1,0 +1,32 @@
+version = 1
+statuses = ["concept", "planning", "confirmed", "completed", "cancelled"]
+
+[[fields]]
+name = "event_type"
+type = { Enum = ["conference", "webinar", "meetup", "workshop", "launch"] }
+required = false
+description = "Type of event"
+
+[[fields]]
+name = "venue"
+type = "String"
+required = false
+description = "Venue for the event"
+
+[[fields]]
+name = "start_date"
+type = "String"
+required = false
+description = "Start date of the event"
+
+[[fields]]
+name = "end_date"
+type = "String"
+required = false
+description = "End date of the event"
+
+[[fields]]
+name = "expected_attendees"
+type = "Number"
+required = false
+description = "Expected number of attendees"

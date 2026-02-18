@@ -1,4 +1,10 @@
+Template Key: analytics-anomaly-detection-investigation
 Category: analytics
+Version: 1.0
+Maturity: diagnostic
+Produces Entities: result
+Produces Relations: investigates
+Prerequisite: experiment >= 1 | suggested: analytics-experiment-plan | Anomaly investigations need experiment data to analyze
 Response Format: mixed
 
 ---
