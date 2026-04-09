@@ -1,0 +1,23 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.bakobiibizo/gargoyle",
+  "description": "A graph memory database for agent memories and seeding context",
+  "status": "active",
+  "repository": {
+     "url": "https://github.com/bakobiibizo/gargoyle",
+     "source": "github"
+  },
+  "version": "1.0.0",
+  "packages": [
+     {
+       "registry_type": "",
+       "registry_base_url": "",
+       "identifier": "gargoyle",
+       "version": "",
+       "runtime_hint": "",
+       "transport": {
+         "type": "stdio"
+       }
+     }
+  ]
+}

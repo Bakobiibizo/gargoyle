@@ -3,6 +3,10 @@
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
+use crate::agents::types::{
+    GraphQueryRequest, GraphQueryResponse, TemplateCuratorRequest, TemplateCuratorResponse,
+};
+use crate::agents::{AgentRequest, AgentRouter};
 use crate::error::{GargoyleError, Result};
 use crate::models::patch::{CreateEntityPayload, CreateRelationPayload, UpdateEntityPayload};
 use crate::services::indexer::IndexerService;
@@ -123,6 +127,79 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 }),
             },
         },
+        // Agent-based tools
+        ToolDefinition {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "template_search".to_string(),
+                description: "Search for templates by keyword. Returns matching template keys, categories, and descriptions.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "Search query for templates" },
+                        "limit": { "type": "integer", "description": "Max results (default 5)" }
+                    },
+                    "required": ["query"]
+                }),
+            },
+        },
+        ToolDefinition {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "template_get".to_string(),
+                description: "Get full details of a template by its key, including content.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "key": { "type": "string", "description": "Template key" }
+                    },
+                    "required": ["key"]
+                }),
+            },
+        },
+        ToolDefinition {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "template_context".to_string(),
+                description: "Get a concise summary of templates relevant to a user query. Use this to understand what templates are available before recommending one.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "User's goal or question" },
+                        "max_tokens": { "type": "integer", "description": "Max response length (default 500)" }
+                    },
+                    "required": ["query"]
+                }),
+            },
+        },
+        ToolDefinition {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "graph_context".to_string(),
+                description: "Get a concise summary of entities relevant to a user query. Use this to understand what knowledge exists before creating new entities.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "Search query" },
+                        "max_tokens": { "type": "integer", "description": "Max response length (default 500)" }
+                    },
+                    "required": ["query"]
+                }),
+            },
+        },
+        ToolDefinition {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "graph_statistics".to_string(),
+                description: "Get statistics about the knowledge graph: entity counts by type, relation counts, etc.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "entity_type": { "type": "string", "description": "Optional: filter stats to specific entity type" }
+                    }
+                }),
+            },
+        },
     ]
 }
 
@@ -139,22 +216,36 @@ pub fn execute_tool(conn: &Connection, tool_name: &str, args_json: &str) -> Resu
         "update_entity" => exec_update_entity(conn, &args),
         "create_relation" => exec_create_relation(conn, &args),
         "run_template" => exec_run_template(conn, &args),
-        _ => Err(GargoyleError::Schema(format!("Unknown tool: {}", tool_name))),
+        "template_search" => exec_template_search(conn, &args),
+        "template_get" => exec_template_get(conn, &args),
+        "template_context" => exec_template_context(conn, &args),
+        "graph_context" => exec_graph_context(conn, &args),
+        "graph_statistics" => exec_graph_statistics(conn, &args),
+        _ => Err(GargoyleError::Schema(format!(
+            "Unknown tool: {}",
+            tool_name
+        ))),
     }
 }
 
 fn exec_search_entities(conn: &Connection, args: &Value) -> Result<String> {
-    let query = args["query"].as_str()
+    let query = args["query"]
+        .as_str()
         .ok_or_else(|| GargoyleError::Schema("search_entities requires 'query' string".into()))?;
     let limit = args["limit"].as_u64().unwrap_or(10) as usize;
 
     let results = IndexerService::search_fts(conn, query, limit)?;
-    let output: Vec<Value> = results.iter().map(|r| json!({
-        "entity_id": r.entity_id,
-        "title": r.title,
-        "entity_type": r.entity_type,
-        "score": r.score,
-    })).collect();
+    let output: Vec<Value> = results
+        .iter()
+        .map(|r| {
+            json!({
+                "entity_id": r.entity_id,
+                "title": r.title,
+                "entity_type": r.entity_type,
+                "score": r.score,
+            })
+        })
+        .collect();
 
     Ok(serde_json::to_string(&output)?)
 }
@@ -163,31 +254,42 @@ fn exec_list_entities(conn: &Connection, args: &Value) -> Result<String> {
     let entity_type = args["entity_type"].as_str();
     let entities = StoreService::list_entities(conn, entity_type)?;
 
-    let output: Vec<Value> = entities.iter().map(|e| json!({
-        "id": e.id,
-        "title": e.title,
-        "entity_type": e.entity_type,
-        "status": e.status,
-        "created_at": e.created_at,
-    })).collect();
+    let output: Vec<Value> = entities
+        .iter()
+        .map(|e| {
+            json!({
+                "id": e.id,
+                "title": e.title,
+                "entity_type": e.entity_type,
+                "status": e.status,
+                "created_at": e.created_at,
+            })
+        })
+        .collect();
 
     Ok(serde_json::to_string(&output)?)
 }
 
 fn exec_get_entity(conn: &Connection, args: &Value) -> Result<String> {
-    let id = args["id"].as_str()
+    let id = args["id"]
+        .as_str()
         .ok_or_else(|| GargoyleError::Schema("get_entity requires 'id' string".into()))?;
 
     let entity = StoreService::get_entity(conn, id)?;
     let relations = StoreService::get_relations(conn, id)?;
 
-    let rel_output: Vec<Value> = relations.iter().map(|r| json!({
-        "id": r.id,
-        "from_id": r.from_id,
-        "to_id": r.to_id,
-        "relation_type": r.relation_type,
-        "weight": r.weight,
-    })).collect();
+    let rel_output: Vec<Value> = relations
+        .iter()
+        .map(|r| {
+            json!({
+                "id": r.id,
+                "from_id": r.from_id,
+                "to_id": r.to_id,
+                "relation_type": r.relation_type,
+                "weight": r.weight,
+            })
+        })
+        .collect();
 
     let output = json!({
         "id": entity.id,
@@ -207,9 +309,11 @@ fn exec_get_entity(conn: &Connection, args: &Value) -> Result<String> {
 }
 
 fn exec_create_entity(conn: &Connection, args: &Value) -> Result<String> {
-    let entity_type = args["entity_type"].as_str()
+    let entity_type = args["entity_type"]
+        .as_str()
         .ok_or_else(|| GargoyleError::Schema("create_entity requires 'entity_type'".into()))?;
-    let title = args["title"].as_str()
+    let title = args["title"]
+        .as_str()
         .ok_or_else(|| GargoyleError::Schema("create_entity requires 'title'".into()))?;
 
     let payload = CreateEntityPayload {
@@ -226,7 +330,9 @@ fn exec_create_entity(conn: &Connection, args: &Value) -> Result<String> {
 
     let result = StoreService::create_entity(conn, payload)?;
 
-    let entity_id = result.applied.first()
+    let entity_id = result
+        .applied
+        .first()
         .and_then(|a| a.entity_id.clone())
         .unwrap_or_default();
 
@@ -238,7 +344,8 @@ fn exec_create_entity(conn: &Connection, args: &Value) -> Result<String> {
 }
 
 fn exec_update_entity(conn: &Connection, args: &Value) -> Result<String> {
-    let entity_id = args["entity_id"].as_str()
+    let entity_id = args["entity_id"]
+        .as_str()
         .ok_or_else(|| GargoyleError::Schema("update_entity requires 'entity_id'".into()))?;
 
     // Auto-fetch expected_updated_at for optimistic locking
@@ -266,11 +373,14 @@ fn exec_update_entity(conn: &Connection, args: &Value) -> Result<String> {
 }
 
 fn exec_create_relation(conn: &Connection, args: &Value) -> Result<String> {
-    let from_id = args["from_id"].as_str()
+    let from_id = args["from_id"]
+        .as_str()
         .ok_or_else(|| GargoyleError::Schema("create_relation requires 'from_id'".into()))?;
-    let to_id = args["to_id"].as_str()
+    let to_id = args["to_id"]
+        .as_str()
         .ok_or_else(|| GargoyleError::Schema("create_relation requires 'to_id'".into()))?;
-    let relation_type = args["relation_type"].as_str()
+    let relation_type = args["relation_type"]
+        .as_str()
         .ok_or_else(|| GargoyleError::Schema("create_relation requires 'relation_type'".into()))?;
 
     let payload = CreateRelationPayload {
@@ -284,7 +394,9 @@ fn exec_create_relation(conn: &Connection, args: &Value) -> Result<String> {
     };
 
     let result = StoreService::create_relation(conn, payload)?;
-    let relation_id = result.applied.first()
+    let relation_id = result
+        .applied
+        .first()
         .and_then(|a| a.relation_id.clone())
         .unwrap_or_default();
 
@@ -296,7 +408,8 @@ fn exec_create_relation(conn: &Connection, args: &Value) -> Result<String> {
 }
 
 fn exec_run_template(conn: &Connection, args: &Value) -> Result<String> {
-    let template_key = args["template_key"].as_str()
+    let template_key = args["template_key"]
+        .as_str()
         .ok_or_else(|| GargoyleError::Schema("run_template requires 'template_key'".into()))?;
     let params = args.get("params").cloned().unwrap_or(json!({}));
 
@@ -316,4 +429,120 @@ fn exec_run_template(conn: &Connection, args: &Value) -> Result<String> {
         "produced_relations": output.produced_relations.len(),
         "action_items": output.action_items,
     }))?)
+}
+
+// =============================================================================
+// Agent-based tool implementations
+// =============================================================================
+
+fn exec_template_search(conn: &Connection, args: &Value) -> Result<String> {
+    let query = args["query"]
+        .as_str()
+        .ok_or_else(|| GargoyleError::Schema("template_search requires 'query'".into()))?;
+    let limit = args["limit"].as_u64().map(|l| l as usize);
+
+    let request = AgentRequest::TemplateCurator(TemplateCuratorRequest::Search {
+        query: query.to_string(),
+        limit,
+    });
+
+    match AgentRouter::dispatch(conn, request)? {
+        crate::agents::AgentResponse::TemplateCurator(TemplateCuratorResponse::TemplateList {
+            templates,
+        }) => {
+            let output: Vec<Value> = templates
+                .iter()
+                .map(|t| {
+                    json!({
+                        "key": t.key,
+                        "category": t.category,
+                        "description": t.description,
+                        "produces_entities": t.produces_entities,
+                    })
+                })
+                .collect();
+            Ok(serde_json::to_string(&output)?)
+        }
+        _ => Err(GargoyleError::Schema("Unexpected agent response".into())),
+    }
+}
+
+fn exec_template_get(conn: &Connection, args: &Value) -> Result<String> {
+    let key = args["key"]
+        .as_str()
+        .ok_or_else(|| GargoyleError::Schema("template_get requires 'key'".into()))?;
+
+    let request = AgentRequest::TemplateCurator(TemplateCuratorRequest::Get {
+        key: key.to_string(),
+    });
+
+    match AgentRouter::dispatch(conn, request)? {
+        crate::agents::AgentResponse::TemplateCurator(TemplateCuratorResponse::Template {
+            template,
+        }) => Ok(serde_json::to_string(&json!({
+            "key": template.key,
+            "category": template.category,
+            "description": template.description,
+            "content": template.content,
+            "produces_entities": template.produces_entities,
+            "response_format": template.response_format,
+        }))?),
+        _ => Err(GargoyleError::Schema("Unexpected agent response".into())),
+    }
+}
+
+fn exec_template_context(conn: &Connection, args: &Value) -> Result<String> {
+    let query = args["query"]
+        .as_str()
+        .ok_or_else(|| GargoyleError::Schema("template_context requires 'query'".into()))?;
+    let max_tokens = args["max_tokens"].as_u64().unwrap_or(500) as usize;
+
+    let request = AgentRequest::TemplateCurator(TemplateCuratorRequest::GetRelevantContext {
+        user_query: query.to_string(),
+        max_tokens,
+    });
+
+    match AgentRouter::dispatch(conn, request)? {
+        crate::agents::AgentResponse::TemplateCurator(TemplateCuratorResponse::Context {
+            context,
+        }) => Ok(context),
+        _ => Err(GargoyleError::Schema("Unexpected agent response".into())),
+    }
+}
+
+fn exec_graph_context(conn: &Connection, args: &Value) -> Result<String> {
+    let query = args["query"]
+        .as_str()
+        .ok_or_else(|| GargoyleError::Schema("graph_context requires 'query'".into()))?;
+    let max_tokens = args["max_tokens"].as_u64().unwrap_or(500) as usize;
+
+    let request = AgentRequest::GraphQuery(GraphQueryRequest::GetRelevantEntities {
+        query: query.to_string(),
+        max_tokens,
+    });
+
+    match AgentRouter::dispatch(conn, request)? {
+        crate::agents::AgentResponse::GraphQuery(GraphQueryResponse::Context { context }) => {
+            Ok(context)
+        }
+        _ => Err(GargoyleError::Schema("Unexpected agent response".into())),
+    }
+}
+
+fn exec_graph_statistics(conn: &Connection, args: &Value) -> Result<String> {
+    let entity_type = args["entity_type"].as_str().map(|s| s.to_string());
+
+    let request = AgentRequest::GraphQuery(GraphQueryRequest::GetStatistics { entity_type });
+
+    match AgentRouter::dispatch(conn, request)? {
+        crate::agents::AgentResponse::GraphQuery(GraphQueryResponse::Statistics { stats }) => {
+            Ok(serde_json::to_string(&json!({
+                "total_entities": stats.total_entities,
+                "total_relations": stats.total_relations,
+                "entities_by_type": stats.entities_by_type,
+                "relations_by_type": stats.relations_by_type,
+            }))?)
+        }
+        _ => Err(GargoyleError::Schema("Unexpected agent response".into())),
+    }
 }

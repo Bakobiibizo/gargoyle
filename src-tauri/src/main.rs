@@ -1,18 +1,43 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use gargoyle_lib::AppState;
 use gargoyle_lib::db;
+use gargoyle_lib::logging;
+use gargoyle_lib::AppState;
 use std::sync::Mutex;
+use tracing::{error, info};
 
 fn main() {
     // Load .env file (fail silently if not found — env vars may be set externally)
     dotenvy::dotenv().ok();
 
+    // Initialize structured logging
+    logging::init_logging();
+
+    info!("Starting Gargoyle application");
+
     // Initialize the SQLite database
-    let conn = db::connection::create_connection("./gargoyle.db")
-        .expect("Failed to create database connection");
-    db::migrations::run_migrations(&conn)
-        .expect("Failed to run database migrations");
+    let conn = match db::connection::create_connection("./gargoyle.db") {
+        Ok(c) => {
+            info!("Database connection established");
+            c
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to create database connection");
+            panic!("Failed to create database connection: {}", e);
+        }
+    };
+
+    if let Err(e) = db::migrations::run_migrations(&conn) {
+        error!(error = %e, "Failed to run database migrations");
+        panic!("Failed to run database migrations: {}", e);
+    }
+    info!("Database migrations complete");
+
+    if let Err(e) = db::seeders::seed_templates(&conn) {
+        error!(error = %e, "Failed to seed templates");
+        panic!("Failed to seed templates: {}", e);
+    }
+    info!("Templates seeded");
 
     tauri::Builder::default()
         .manage(AppState {
@@ -42,6 +67,12 @@ fn main() {
             gargoyle_lib::commands::template_commands::check_prerequisites,
             gargoyle_lib::commands::template_commands::list_templates,
             gargoyle_lib::commands::template_commands::list_runs,
+            gargoyle_lib::commands::template_commands::create_template,
+            gargoyle_lib::commands::template_commands::get_template,
+            gargoyle_lib::commands::template_commands::update_template,
+            gargoyle_lib::commands::template_commands::delete_template,
+            gargoyle_lib::commands::template_commands::list_templates_db,
+            gargoyle_lib::commands::template_commands::search_templates,
             gargoyle_lib::commands::graph_commands::get_entity_graph,
             gargoyle_lib::commands::graph_commands::audit_related_to,
             gargoyle_lib::commands::graph_commands::rebuild_projection,
@@ -63,6 +94,15 @@ fn main() {
             gargoyle_lib::commands::chat_commands::add_chat_message,
             gargoyle_lib::commands::chat_commands::update_chat_session_title,
             gargoyle_lib::commands::chat_commands::delete_chat_session,
+            gargoyle_lib::commands::intake_commands::start_intake,
+            gargoyle_lib::commands::intake_commands::get_intake_system_prompt,
+            gargoyle_lib::commands::intake_commands::process_intake_message,
+            gargoyle_lib::commands::intake_commands::process_intake_response,
+            gargoyle_lib::commands::intake_commands::get_graph_build_prompt,
+            gargoyle_lib::commands::intake_commands::process_graph_response,
+            gargoyle_lib::commands::intake_commands::sync_intake_to_db,
+            gargoyle_lib::commands::intake_commands::get_intake_summary,
+            gargoyle_lib::commands::agent_commands::agent_dispatch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::error::{GargoyleError, Result};
-use crate::services::llm::{LlmClient, LlmConfig, ChatMessage};
+use crate::services::llm::{ChatMessage, LlmClient, LlmConfig};
 use crate::services::tool_executor;
 use crate::AppState;
 
@@ -61,11 +62,15 @@ pub struct LlmToolChatOutput {
 
 /// Send a chat completion request to the configured LLM.
 #[tauri::command]
+#[instrument(skip(input), fields(msg_count = input.messages.len()))]
 pub fn llm_chat(input: LlmChatInput) -> Result<LlmChatOutput> {
+    info!("LLM chat request");
     let config = LlmConfig::from_env()?;
     let client = LlmClient::new(config);
+    debug!(model = %client.model(), "LLM client initialized");
 
-    let messages: Vec<ChatMessage> = input.messages
+    let messages: Vec<ChatMessage> = input
+        .messages
         .into_iter()
         .map(|m| ChatMessage {
             role: m.role,
@@ -77,10 +82,12 @@ pub fn llm_chat(input: LlmChatInput) -> Result<LlmChatOutput> {
 
     let response = client.chat(messages, input.temperature, input.max_tokens)?;
 
-    let choice = response.choices.first()
+    let choice = response
+        .choices
+        .first()
         .ok_or_else(|| GargoyleError::Schema("LLM returned no choices".into()))?;
 
-    Ok(LlmChatOutput {
+    let output = LlmChatOutput {
         reply: choice.message.content.clone().unwrap_or_default(),
         model: client.model().to_string(),
         finish_reason: choice.finish_reason.clone(),
@@ -89,20 +96,26 @@ pub fn llm_chat(input: LlmChatInput) -> Result<LlmChatOutput> {
             completion_tokens: u.completion_tokens,
             total_tokens: u.total_tokens,
         }),
-    })
+    };
+    info!(finish_reason = ?output.finish_reason, "LLM chat completed");
+    Ok(output)
 }
 
 /// Chat with tool-calling support. Runs the full tool-calling loop (max 10 iterations).
 #[tauri::command]
+#[instrument(skip(state, input), fields(msg_count = input.messages.len()))]
 pub fn llm_chat_with_tools(
     state: State<'_, AppState>,
     input: LlmChatInput,
 ) -> Result<LlmToolChatOutput> {
+    info!("LLM chat with tools request");
     let config = LlmConfig::from_env()?;
     let client = LlmClient::new(config);
     let tools = tool_executor::get_tool_definitions();
+    debug!(model = %client.model(), tool_count = tools.len(), "LLM client initialized with tools");
 
-    let mut messages: Vec<ChatMessage> = input.messages
+    let mut messages: Vec<ChatMessage> = input
+        .messages
         .into_iter()
         .map(|m| ChatMessage {
             role: m.role,
@@ -116,9 +129,12 @@ pub fn llm_chat_with_tools(
     let mut last_usage: Option<LlmUsageOutput> = None;
     let mut last_finish_reason: Option<String> = None;
 
-    let max_iterations = crate::config::GargoyleConfig::global().llm_tuning.max_tool_iterations;
+    let max_iterations = crate::config::GargoyleConfig::global()
+        .llm_tuning
+        .max_tool_iterations;
 
     for iteration in 0..max_iterations {
+        debug!(iteration = iteration, "Tool loop iteration");
         let response = match client.chat_with_tools(
             messages.clone(),
             input.temperature,
@@ -165,22 +181,26 @@ pub fn llm_chat_with_tools(
         // Check if the LLM wants to call tools
         if let Some(ref tool_calls) = choice.message.tool_calls {
             if !tool_calls.is_empty() {
+                info!(tool_count = tool_calls.len(), "LLM requested tool calls");
                 // Append the assistant message (with tool_calls) to the conversation
                 messages.push(choice.message.clone());
 
                 // Execute each tool call and append results
                 let guard = state.db.lock().unwrap();
                 let conn = guard.as_ref().ok_or_else(|| {
+                    error!("Database not initialized");
                     GargoyleError::Schema("Database not initialized".to_string())
                 })?;
 
                 for tc in tool_calls {
+                    debug!(tool_name = %tc.function.name, "Executing tool call");
                     let tool_result = match tool_executor::execute_tool(
                         conn,
                         &tc.function.name,
                         &tc.function.arguments,
                     ) {
                         Ok(result) => {
+                            info!(tool_name = %tc.function.name, "Tool call succeeded");
                             all_tool_logs.push(ToolCallLog {
                                 tool_name: tc.function.name.clone(),
                                 arguments: tc.function.arguments.clone(),
@@ -191,6 +211,7 @@ pub fn llm_chat_with_tools(
                         }
                         Err(e) => {
                             let err_msg = format!("Error: {}", e);
+                            warn!(tool_name = %tc.function.name, error = %e, "Tool call failed");
                             all_tool_logs.push(ToolCallLog {
                                 tool_name: tc.function.name.clone(),
                                 arguments: tc.function.arguments.clone(),
@@ -217,6 +238,10 @@ pub fn llm_chat_with_tools(
         }
 
         // No tool calls — we have a final text response
+        info!(
+            tool_calls_made = all_tool_logs.len(),
+            "LLM tool chat completed"
+        );
         return Ok(LlmToolChatOutput {
             reply: choice.message.content.clone().unwrap_or_default(),
             model: client.model().to_string(),
@@ -227,7 +252,12 @@ pub fn llm_chat_with_tools(
     }
 
     // Exhausted iterations — return whatever we have
-    let last_content = messages.last()
+    warn!(
+        max_iterations = max_iterations,
+        "Tool loop exhausted all iterations"
+    );
+    let last_content = messages
+        .last()
         .and_then(|m| m.content.clone())
         .unwrap_or_else(|| "The assistant used all available tool-calling iterations.".to_string());
 
@@ -242,15 +272,24 @@ pub fn llm_chat_with_tools(
 
 /// Quick single-prompt completion.
 #[tauri::command]
+#[instrument(skip(prompt), fields(prompt_len = prompt.len()))]
 pub fn llm_complete(prompt: String) -> Result<String> {
+    debug!("LLM complete request");
     let config = LlmConfig::from_env()?;
     let client = LlmClient::new(config);
-    client.complete(&prompt)
+    let result = client.complete(&prompt);
+    match &result {
+        Ok(_) => debug!("LLM complete succeeded"),
+        Err(e) => error!(error = %e, "LLM complete failed"),
+    }
+    result
 }
 
 /// Check LLM connection status without sending a real prompt.
 #[tauri::command]
+#[instrument]
 pub fn llm_status() -> Result<LlmStatusOutput> {
+    debug!("Checking LLM status");
     let config = match LlmConfig::from_env() {
         Ok(c) => c,
         Err(e) => {

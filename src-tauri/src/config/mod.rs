@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use crate::config::entity_type_config::{EntityTypeDef, load_entity_types};
+use crate::config::entity_type_config::{load_entity_types, EntityTypeDef};
 
 pub use entity_type_config::FieldDefConfig;
 pub use template_loader::{GenericConfig, LoadedTemplate};
@@ -28,6 +28,42 @@ pub struct GargoyleToml {
     pub graph: GraphConfig,
     #[serde(default)]
     pub llm: LlmTuningConfig,
+    #[serde(default)]
+    pub memory: MemoryConfig,
+    #[serde(default)]
+    pub logging: LoggingConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MemoryConfig {
+    #[serde(default = "default_memory_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_embedder_url")]
+    pub embedder_url: String,
+    #[serde(default = "default_embed_model")]
+    pub embed_model: String,
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_memory_enabled(),
+            embedder_url: default_embedder_url(),
+            embed_model: default_embed_model(),
+        }
+    }
+}
+
+fn default_memory_enabled() -> bool {
+    true
+}
+
+fn default_embedder_url() -> String {
+    "https://erasmus.ngrok.dev".to_string()
+}
+
+fn default_embed_model() -> String {
+    "BAAI/bge-small-en-v1.5".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -82,6 +118,10 @@ pub struct IndexerConfig {
     pub embedding_dimensions: usize,
     #[serde(default = "default_embedding_model")]
     pub embedding_model: String,
+    #[serde(default = "default_use_real_embeddings")]
+    pub use_real_embeddings: bool,
+    #[serde(default = "default_embedder_url")]
+    pub embedder_url: String,
 }
 
 impl Default for IndexerConfig {
@@ -89,6 +129,8 @@ impl Default for IndexerConfig {
         Self {
             embedding_dimensions: default_embedding_dimensions(),
             embedding_model: default_embedding_model(),
+            use_real_embeddings: default_use_real_embeddings(),
+            embedder_url: default_embedder_url(),
         }
     }
 }
@@ -121,31 +163,112 @@ impl Default for LlmTuningConfig {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoggingConfig {
+    #[serde(default = "default_log_level")]
+    pub level: String,
+    #[serde(default = "default_log_file_enabled")]
+    pub file_enabled: bool,
+    #[serde(default = "default_log_dir")]
+    pub log_dir: String,
+    #[serde(default = "default_log_file_prefix")]
+    pub file_prefix: String,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: default_log_level(),
+            file_enabled: default_log_file_enabled(),
+            log_dir: default_log_dir(),
+            file_prefix: default_log_file_prefix(),
+        }
+    }
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+fn default_log_file_enabled() -> bool {
+    true
+}
+
+fn default_log_dir() -> String {
+    "./logs".to_string()
+}
+
+fn default_log_file_prefix() -> String {
+    "gargoyle".to_string()
+}
+
 // Default value functions
 fn default_canonical_relation_types() -> Vec<String> {
     vec![
-        "part_of", "derived_from", "depends_on", "blocks", "duplicate_of",
-        "implements", "mentions", "supports", "contradicts", "tests",
-        "decides", "evidence_for", "assigned_to", "created_in", "related_to",
-        "targets", "competes_with", "measures", "funds", "enables",
-        "mitigates", "promotes",
+        "part_of",
+        "derived_from",
+        "depends_on",
+        "blocks",
+        "duplicate_of",
+        "implements",
+        "mentions",
+        "supports",
+        "contradicts",
+        "tests",
+        "decides",
+        "evidence_for",
+        "assigned_to",
+        "created_in",
+        "related_to",
+        "targets",
+        "competes_with",
+        "measures",
+        "funds",
+        "enables",
+        "mitigates",
+        "promotes",
     ]
     .into_iter()
     .map(String::from)
     .collect()
 }
 
-fn default_exact_match_confidence() -> f64 { 0.95 }
-fn default_fuzzy_match_confidence() -> f64 { 0.70 }
-fn default_embedding_match_confidence() -> f64 { 0.80 }
-fn default_levenshtein_max_distance() -> usize { 3 }
-fn default_trigram_similarity_threshold() -> f64 { 0.7 }
-fn default_min_title_length_for_embedding() -> usize { 4 }
-fn default_embedding_proximity_threshold() -> f64 { 0.92 }
-fn default_embedding_dimensions() -> usize { 128 }
-fn default_embedding_model() -> String { "mock-hash-v1".to_string() }
-fn default_related_to_threshold() -> f64 { 0.20 }
-fn default_max_tool_iterations() -> usize { 10 }
+fn default_exact_match_confidence() -> f64 {
+    0.95
+}
+fn default_fuzzy_match_confidence() -> f64 {
+    0.70
+}
+fn default_embedding_match_confidence() -> f64 {
+    0.80
+}
+fn default_levenshtein_max_distance() -> usize {
+    3
+}
+fn default_trigram_similarity_threshold() -> f64 {
+    0.7
+}
+fn default_min_title_length_for_embedding() -> usize {
+    4
+}
+fn default_embedding_proximity_threshold() -> f64 {
+    0.92
+}
+fn default_embedding_dimensions() -> usize {
+    128
+}
+fn default_embedding_model() -> String {
+    default_embed_model()
+}
+fn default_use_real_embeddings() -> bool {
+    true
+}
+fn default_related_to_threshold() -> f64 {
+    0.20
+}
+fn default_max_tool_iterations() -> usize {
+    10
+}
 
 /// The main configuration struct for Gargoyle.
 ///
@@ -158,6 +281,7 @@ pub struct GargoyleConfig {
     pub indexer: IndexerConfig,
     pub graph: GraphConfig,
     pub llm_tuning: LlmTuningConfig,
+    pub logging: LoggingConfig,
 }
 
 impl GargoyleConfig {
@@ -172,8 +296,7 @@ impl GargoyleConfig {
         let gargoyle_toml: GargoyleToml = if toml_path.exists() {
             let content = std::fs::read_to_string(&toml_path)
                 .map_err(|e| format!("Failed to read gargoyle.toml: {}", e))?;
-            toml::from_str(&content)
-                .map_err(|e| format!("Failed to parse gargoyle.toml: {}", e))?
+            toml::from_str(&content).map_err(|e| format!("Failed to parse gargoyle.toml: {}", e))?
         } else {
             GargoyleToml::default()
         };
@@ -193,6 +316,7 @@ impl GargoyleConfig {
             indexer: gargoyle_toml.indexer,
             graph: gargoyle_toml.graph,
             llm_tuning: gargoyle_toml.llm,
+            logging: gargoyle_toml.logging,
         })
     }
 
@@ -205,6 +329,7 @@ impl GargoyleConfig {
             indexer: IndexerConfig::default(),
             graph: GraphConfig::default(),
             llm_tuning: LlmTuningConfig::default(),
+            logging: LoggingConfig::default(),
         }
     }
 
@@ -220,17 +345,32 @@ impl GargoyleConfig {
             }
         })
     }
+
+    /// Initialize the global config from a specific directory.
+    /// Must be called before any call to `global()`. If `global()` was
+    /// already called, this is a no-op (OnceLock is already set).
+    pub fn init_from_dir(dir: &Path) {
+        CONFIG.get_or_init(|| {
+            match Self::load(dir) {
+                Ok(config) => config,
+                Err(e) => {
+                    eprintln!("Warning: failed to load config from {}: {}", dir.display(), e);
+                    Self::defaults()
+                }
+            }
+        });
+    }
 }
 
-/// Build the hardcoded default entity type definitions.
-/// This is the safety net that preserves all 27 current entity types
-/// when no config directory is present (e.g., in tests).
+/// Build the core entity type definitions.
+///
+/// **Rigid tier** (strict schema, factual): user_profile, company, person, commitment, metric
+/// **Flexible tier** (loose schema, conceptual): doc, note, idea, task
 fn default_entity_types() -> HashMap<String, EntityTypeDef> {
     use crate::config::entity_type_config::{FieldDefConfig, FieldTypeConfig, TaggedFieldType};
 
     let mut types = HashMap::new();
 
-    // Helper macros to reduce boilerplate
     macro_rules! field {
         ($name:expr, $ft:expr) => {
             FieldDefConfig {
@@ -240,307 +380,283 @@ fn default_entity_types() -> HashMap<String, EntityTypeDef> {
                 description: None,
             }
         };
-        ($name:expr, $ft:expr, required) => {
-            FieldDefConfig {
-                name: $name.to_string(),
-                field_type: $ft,
-                required: true,
-                description: None,
-            }
-        };
     }
 
-    macro_rules! s { () => { FieldTypeConfig::Simple("String".to_string()) }; }
-    macro_rules! n { () => { FieldTypeConfig::Simple("Number".to_string()) }; }
-    macro_rules! b { () => { FieldTypeConfig::Simple("Boolean".to_string()) }; }
-    macro_rules! eref { ($t:expr) => { FieldTypeConfig::Tagged(TaggedFieldType::EntityRef($t.to_string())) }; }
+    macro_rules! s {
+        () => {
+            FieldTypeConfig::Simple("String".to_string())
+        };
+    }
+    macro_rules! d {
+        () => {
+            FieldTypeConfig::Simple("Date".to_string())
+        };
+    }
     macro_rules! en {
         ($($v:expr),+) => {
             FieldTypeConfig::Tagged(TaggedFieldType::Enum(vec![$($v.to_string()),+]))
         };
     }
+    macro_rules! arr {
+        ($t:expr) => {
+            FieldTypeConfig::Tagged(TaggedFieldType::Array($t.to_string()))
+        };
+    }
 
-    // metric
-    types.insert("metric".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["active".into(), "paused".into(), "deprecated".into(), "archived".into()],
-        fields: vec![
-            field!("current_value", n!()), field!("target_value", n!()),
-            field!("trend", en!("up", "down", "flat")), field!("data_source", s!()),
-        ],
-    });
+    // doc - Long-form content, documents
+    types.insert(
+        "doc".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec!["draft".into(), "published".into(), "archived".into()],
+            fields: vec![
+                field!("doc_type", s!()),
+                field!("tags", arr!("string")),
+                field!("source_url", s!()),
+            ],
+        },
+    );
 
-    // experiment
-    types.insert("experiment".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["draft".into(), "running".into(), "concluded".into(), "archived".into()],
-        fields: vec![
-            field!("hypothesis", s!()), field!("funnel_position", s!()),
-            field!("primary_metric", s!()),
-        ],
-    });
+    // note - Quick captures, observations
+    types.insert(
+        "note".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec![],
+            fields: vec![field!("context", s!()), field!("tags", arr!("string"))],
+        },
+    );
 
-    // result
-    types.insert("result".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["preliminary".into(), "final".into(), "invalidated".into()],
-        fields: vec![
-            field!("outcome", s!()), field!("confidence_level", s!()),
-            field!("data_summary", s!()),
-        ],
-    });
+    // idea - Concepts to explore
+    types.insert(
+        "idea".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec![
+                "seed".into(),
+                "exploring".into(),
+                "validated".into(),
+                "parked".into(),
+            ],
+            fields: vec![
+                field!("stage", en!("seed", "exploring", "validated", "parked")),
+                field!("tags", arr!("string")),
+                field!("potential_value", s!()),
+            ],
+        },
+    );
 
-    // task
-    types.insert("task".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["open".into(), "in_progress".into(), "blocked".into(), "done".into(), "cancelled".into()],
-        fields: vec![
-            field!("assignee_id", s!()), field!("effort_estimate", s!()),
-            field!("project_id", eref!("project")), field!("acceptance_criteria", s!()),
-        ],
-    });
+    // task - Actionable items
+    types.insert(
+        "task".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec![
+                "open".into(),
+                "in_progress".into(),
+                "blocked".into(),
+                "done".into(),
+                "cancelled".into(),
+            ],
+            fields: vec![
+                field!("assignee", s!()),
+                field!("due_date", d!()),
+                field!("effort", en!("XS", "S", "M", "L", "XL")),
+                field!("tags", arr!("string")),
+            ],
+        },
+    );
 
-    // project
-    types.insert("project".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["planning".into(), "active".into(), "paused".into(), "completed".into(), "archived".into()],
-        fields: vec![
-            field!("owner_id", s!()), field!("objective", s!()),
-            field!("success_criteria", s!()), field!("timeline", s!()),
-        ],
-    });
+    // =========================================================================
+    // RIGID TIER - Factual entities with strict schemas
+    // =========================================================================
 
-    // decision
-    types.insert("decision".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["pending".into(), "decided".into(), "revisited".into(), "superseded".into()],
-        fields: vec![
-            field!("owner_id", s!(), required), field!("decided_at", s!()),
-            field!("rationale", s!(), required), field!("revisit_triggers", s!()),
-            field!("options_considered", s!()),
-        ],
-    });
+    // user_profile - The user's identity (singleton, one per system)
+    types.insert(
+        "user_profile".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec!["active".into()],
+            fields: vec![
+                field!("full_name", s!()),
+                field!("email", s!()),
+                field!("timezone", s!()),
+                field!("role", s!()),
+                field!("department", s!()),
+                field!("company_id", s!()),
+                field!("communication_style", en!("formal", "casual", "technical")),
+                field!("working_hours_start", s!()),
+                field!("working_hours_end", s!()),
+            ],
+        },
+    );
 
-    // person
-    types.insert("person".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["active".into(), "departed".into()],
-        fields: vec![
-            field!("email", s!()), field!("role", s!()),
-            field!("department", s!()), field!("is_external", b!()),
-        ],
-    });
+    // company - Organization context
+    types.insert(
+        "company".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec!["active".into(), "inactive".into()],
+            fields: vec![
+                field!("legal_name", s!()),
+                field!("industry", s!()),
+                field!(
+                    "size",
+                    en!("solo", "small", "medium", "large", "enterprise")
+                ),
+                field!("website", s!()),
+                field!("mission", s!()),
+                field!("values", arr!("string")),
+            ],
+        },
+    );
 
-    // note
-    types.insert("note".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec![],
-        fields: vec![
-            field!("context", s!()), field!("tags", s!()),
-            field!("linked_entity_id", eref!("*")),
-        ],
-    });
+    // person - People the user interacts with
+    types.insert(
+        "person".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec!["active".into(), "inactive".into()],
+            fields: vec![
+                field!("full_name", s!()),
+                field!("email", s!()),
+                field!("role", s!()),
+                field!("company", s!()),
+                field!(
+                    "relationship",
+                    en!(
+                        "colleague",
+                        "manager",
+                        "report",
+                        "client",
+                        "vendor",
+                        "partner",
+                        "other"
+                    )
+                ),
+                field!("notes", s!()),
+            ],
+        },
+    );
 
-    // session
-    types.insert("session".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["active".into(), "ended".into()],
-        fields: vec![
-            field!("session_type", en!("planning", "review", "standup", "workshop", "retro")),
-            field!("participants", s!()), field!("agenda", s!()), field!("outcomes", s!()),
-        ],
-    });
+    // commitment - Deadlines, promises, scheduled events
+    types.insert(
+        "commitment".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec![
+                "scheduled".into(),
+                "in_progress".into(),
+                "completed".into(),
+                "missed".into(),
+                "cancelled".into(),
+            ],
+            fields: vec![
+                field!(
+                    "commitment_type",
+                    en!("deadline", "meeting", "delivery", "review", "milestone")
+                ),
+                field!("due_date", d!()),
+                field!("due_time", s!()),
+                field!("stakeholders", arr!("string")),
+                field!("deliverable", s!()),
+                field!(
+                    "recurrence",
+                    en!("once", "daily", "weekly", "monthly", "quarterly")
+                ),
+            ],
+        },
+    );
 
-    // campaign
-    types.insert("campaign".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["planning".into(), "live".into(), "paused".into(), "completed".into(), "cancelled".into()],
-        fields: vec![
-            field!("objective", s!()), field!("budget", n!()),
-            field!("channel", en!("email", "paid_social", "paid_search", "organic", "events", "partnerships")),
-            field!("start_date", s!()), field!("end_date", s!()),
-            field!("target_audience_id", eref!("audience")),
-        ],
-    });
+    // metric - Tracked numbers and KPIs
+    types.insert(
+        "metric".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec!["active".into(), "paused".into(), "archived".into()],
+            fields: vec![
+                field!(
+                    "metric_type",
+                    en!("kpi", "okr", "target", "budget", "quota")
+                ),
+                field!(
+                    "current_value",
+                    FieldTypeConfig::Simple("Number".to_string())
+                ),
+                field!(
+                    "target_value",
+                    FieldTypeConfig::Simple("Number".to_string())
+                ),
+                field!("unit", s!()),
+                field!(
+                    "period",
+                    en!("daily", "weekly", "monthly", "quarterly", "yearly")
+                ),
+                field!("trend", en!("up", "down", "flat", "unknown")),
+            ],
+        },
+    );
 
-    // audience
-    types.insert("audience".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["draft".into(), "validated".into(), "deprecated".into()],
-        fields: vec![
-            field!("segment_criteria", s!()), field!("estimated_size", n!()),
-            field!("icp_id", eref!("person")), field!("channels", s!()),
-        ],
-    });
+    // project - Container for tasks and work streams
+    types.insert(
+        "project".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec![
+                "planning".into(),
+                "active".into(),
+                "on_hold".into(),
+                "completed".into(),
+                "cancelled".into(),
+            ],
+            fields: vec![
+                field!("owner", s!()),
+                field!("start_date", d!()),
+                field!("target_end_date", d!()),
+                field!("actual_end_date", d!()),
+                field!("priority", en!("low", "medium", "high", "critical")),
+                field!("tags", arr!("string")),
+            ],
+        },
+    );
 
-    // competitor
-    types.insert("competitor".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["active".into(), "acquired".into(), "defunct".into(), "irrelevant".into()],
-        fields: vec![
-            field!("website", s!()), field!("positioning", s!()),
-            field!("strengths", s!()), field!("weaknesses", s!()),
-            field!("market_share", s!()),
-        ],
-    });
+    // =========================================================================
+    // LEGACY TYPES - Required for existing tests
+    // =========================================================================
 
-    // channel
-    types.insert("channel".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["active".into(), "paused".into(), "retired".into()],
-        fields: vec![
-            field!("channel_type", en!("email", "social", "search", "display", "events", "partnerships", "content", "referral")),
-            field!("cost_model", s!()), field!("primary_metric_id", eref!("metric")),
-            field!("budget_allocation", n!()),
-        ],
-    });
+    // experiment - For A/B tests and trials (legacy)
+    types.insert(
+        "experiment".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec![
+                "draft".into(),
+                "running".into(),
+                "completed".into(),
+                "archived".into(),
+            ],
+            fields: vec![
+                field!("hypothesis", s!()),
+                field!("start_date", d!()),
+                field!("end_date", d!()),
+                field!("tags", arr!("string")),
+            ],
+        },
+    );
 
-    // spec
-    types.insert("spec".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["draft".into(), "review".into(), "approved".into(), "superseded".into()],
-        fields: vec![
-            field!("spec_type", en!("technical", "product", "design", "process")),
-            field!("version", s!()), field!("approval_status", s!()),
-            field!("author", s!()),
-        ],
-    });
-
-    // budget
-    types.insert("budget".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["draft".into(), "approved".into(), "active".into(), "exhausted".into(), "closed".into()],
-        fields: vec![
-            field!("total_amount", n!()), field!("currency", s!()),
-            field!("period", s!()), field!("allocated", n!()), field!("spent", n!()),
-        ],
-    });
-
-    // vendor
-    types.insert("vendor".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["evaluating".into(), "active".into(), "paused".into(), "terminated".into()],
-        fields: vec![
-            field!("vendor_type", en!("agency", "saas", "contractor", "platform")),
-            field!("contract_value", n!()), field!("contract_end", s!()),
-            field!("primary_contact", s!()),
-        ],
-    });
-
-    // playbook
-    types.insert("playbook".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["draft".into(), "active".into(), "deprecated".into()],
-        fields: vec![
-            field!("playbook_type", en!("sales", "marketing", "ops", "cs", "dev")),
-            field!("trigger_conditions", s!()), field!("expected_outcome", s!()),
-            field!("owner", s!()),
-        ],
-    });
-
-    // taxonomy
-    types.insert("taxonomy".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["draft".into(), "active".into(), "superseded".into()],
-        fields: vec![
-            field!("taxonomy_type", en!("category", "tag", "hierarchy")),
-            field!("parent_id", eref!("taxonomy")), field!("level", n!()),
-        ],
-    });
-
-    // backlog
-    types.insert("backlog".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["needs_triage".into(), "triaged".into(), "stale".into()],
-        fields: vec![
-            field!("priority_score", n!()), field!("effort", s!()),
-            field!("requester", s!()), field!("target_sprint", s!()),
-        ],
-    });
-
-    // brief
-    types.insert("brief".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["draft".into(), "approved".into(), "in_progress".into(), "completed".into()],
-        fields: vec![
-            field!("brief_type", en!("creative", "campaign", "product", "event")),
-            field!("deadline", s!()), field!("stakeholders", s!()),
-            field!("deliverables", s!()),
-        ],
-    });
-
-    // event
-    types.insert("event".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["concept".into(), "planning".into(), "confirmed".into(), "completed".into(), "cancelled".into()],
-        fields: vec![
-            field!("event_type", en!("conference", "webinar", "meetup", "workshop", "launch")),
-            field!("venue", s!()), field!("start_date", s!()), field!("end_date", s!()),
-            field!("expected_attendees", n!()),
-        ],
-    });
-
-    // policy
-    types.insert("policy".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["draft".into(), "review".into(), "active".into(), "superseded".into()],
-        fields: vec![
-            field!("policy_type", en!("security", "hr", "compliance", "operational")),
-            field!("effective_date", s!()), field!("review_date", s!()),
-            field!("owner", s!()),
-        ],
-    });
-
-    // inbox_item
-    types.insert("inbox_item".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["unprocessed".into(), "triaged".into(), "archived".into()],
-        fields: vec![
-            field!("source_text", s!(), required), field!("source_url", s!()),
-            field!("suggested_type", s!()), field!("suggested_title", s!()),
-        ],
-    });
-
-    // artifact_type
-    types.insert("artifact_type".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec![],
-        fields: vec![
-            field!("artifact_kind", en!("attachment", "link", "export", "rendered_doc")),
-            field!("uri_or_path", s!(), required), field!("hash", s!()),
-            field!("mime", s!()), field!("parent_entity_id", eref!("*")),
-        ],
-    });
-
-    // concept
-    types.insert("concept".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec![],
-        fields: vec![
-            field!("definition", s!()), field!("domain", s!()),
-        ],
-    });
-
-    // commitment
-    types.insert("commitment".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["on_track".into(), "at_risk".into(), "blocked".into(), "fulfilled".into(), "broken".into()],
-        fields: vec![
-            field!("owner_id", s!(), required), field!("deadline", s!()),
-            field!("source_context", s!()), field!("tracking_tool", s!()),
-        ],
-    });
-
-    // issue
-    types.insert("issue".to_string(), EntityTypeDef {
-        version: 1,
-        statuses: vec!["open".into(), "investigating".into(), "mitigated".into(), "resolved".into(), "wont_fix".into()],
-        fields: vec![
-            field!("severity", en!("critical", "high", "medium", "low")),
-            field!("first_observed", s!()), field!("affected_area", s!()),
-            field!("owner_id", s!()), field!("resolution_notes", s!()),
-        ],
-    });
+    // result - Outcomes and findings (legacy)
+    types.insert(
+        "result".to_string(),
+        EntityTypeDef {
+            version: 1,
+            statuses: vec!["preliminary".into(), "final".into(), "archived".into()],
+            fields: vec![
+                field!("outcome", s!()),
+                field!("confidence", FieldTypeConfig::Simple("Number".to_string())),
+                field!("tags", arr!("string")),
+            ],
+        },
+    );
 
     types
 }

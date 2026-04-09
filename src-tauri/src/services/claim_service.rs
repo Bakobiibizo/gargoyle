@@ -29,10 +29,7 @@ impl ClaimService {
     }
 
     /// List claims, optionally filtered by evidence_entity_id. Ordered by created_at DESC.
-    pub fn list_claims(
-        conn: &Connection,
-        evidence_entity_id: Option<&str>,
-    ) -> Result<Vec<Claim>> {
+    pub fn list_claims(conn: &Connection, evidence_entity_id: Option<&str>) -> Result<Vec<Claim>> {
         let (sql, param_values): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
             match evidence_entity_id {
                 Some(eid) => (
@@ -366,7 +363,14 @@ mod tests {
     #[test]
     fn test_validate_grounding_deleted() {
         let conn = test_db();
-        insert_test_entity(&conn, "ev-del", "result", "Deleted Evidence", "manual", "{}");
+        insert_test_entity(
+            &conn,
+            "ev-del",
+            "result",
+            "Deleted Evidence",
+            "manual",
+            "{}",
+        );
         soft_delete_entity(&conn, "ev-del");
 
         let result = ClaimService::validate_grounding(&conn, "ev-del");
@@ -391,8 +395,7 @@ mod tests {
         insert_test_entity(&conn, "ev-1", "result", "Evidence", "manual", "{}");
         insert_test_claim(&conn, "claim-p", "Revenue", "grew_by", "20%", "ev-1");
 
-        let entity_id =
-            ClaimService::promote_claim(&conn, "claim-p", "metric", "agent").unwrap();
+        let entity_id = ClaimService::promote_claim(&conn, "claim-p", "metric", "agent").unwrap();
 
         // Verify the new entity was created
         assert!(!entity_id.is_empty());

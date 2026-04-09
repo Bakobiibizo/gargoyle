@@ -187,7 +187,10 @@ mod tests {
         let conn = setup_db();
         // Should not error on missing key
         let result = ContextManager::delete(&conn, "ghost.key");
-        assert!(result.is_ok(), "Deleting a non-existent key should not error");
+        assert!(
+            result.is_ok(),
+            "Deleting a non-existent key should not error"
+        );
     }
 
     #[test]
@@ -247,7 +250,10 @@ mod tests {
 
         ContextManager::set(&conn, "complex", &complex, None).unwrap();
         let ctx = ContextManager::get(&conn, "complex").unwrap().unwrap();
-        assert_eq!(ctx.context_value, complex, "Complex JSON should roundtrip perfectly");
+        assert_eq!(
+            ctx.context_value, complex,
+            "Complex JSON should roundtrip perfectly"
+        );
     }
 
     #[test]
@@ -274,7 +280,11 @@ mod tests {
         let ctx = ContextManager::get(&conn, "uuid.test").unwrap().unwrap();
 
         // UUIDs have the form xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-        assert_eq!(ctx.context_id.len(), 36, "context_id should be a UUID string");
+        assert_eq!(
+            ctx.context_id.len(),
+            36,
+            "context_id should be a UUID string"
+        );
         assert_eq!(
             ctx.context_id.chars().filter(|c| *c == '-').count(),
             4,

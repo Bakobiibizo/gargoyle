@@ -119,24 +119,69 @@ impl TemplateRegistry {
         Self { templates }
     }
 
+    fn contains_template_files(dir: &std::path::Path) -> bool {
+        if !dir.exists() {
+            return false;
+        }
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => return false,
+        };
+        for entry in entries {
+            let path = match entry {
+                Ok(e) => e.path(),
+                Err(_) => continue,
+            };
+            if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn find_templates_dir(start: &std::path::Path, max_depth: usize) -> Option<PathBuf> {
+        let mut current = start.to_path_buf();
+        for _ in 0..=max_depth {
+            let candidate = current.join("templates");
+            if Self::contains_template_files(&candidate) {
+                return Some(candidate);
+            }
+            if let Some(parent) = current.parent() {
+                current = parent.to_path_buf();
+            } else {
+                break;
+            }
+        }
+        None
+    }
+
     /// Returns the global singleton template registry.
     /// Searches for templates in multiple locations.
     pub fn global() -> &'static TemplateRegistry {
         TEMPLATE_REGISTRY.get_or_init(|| {
-            // Try multiple locations: app root, then parent (for tests running from src-tauri)
-            let candidates = [
-                PathBuf::from("./templates"),
-                PathBuf::from("../templates"),
-            ];
-            for dir in &candidates {
-                if dir.exists() {
-                    let reg = Self::load(dir);
+            // Try multiple locations: walk up from cwd and from executable dir.
+            if let Ok(cwd) = std::env::current_dir() {
+                if let Some(dir) = Self::find_templates_dir(&cwd, 8) {
+                    let reg = Self::load(&dir);
                     if !reg.templates.is_empty() {
                         return reg;
                     }
                 }
             }
-            Self { templates: HashMap::new() }
+
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(exe_dir) = exe.parent() {
+                    if let Some(dir) = Self::find_templates_dir(exe_dir, 8) {
+                        let reg = Self::load(&dir);
+                        if !reg.templates.is_empty() {
+                            return reg;
+                        }
+                    }
+                }
+            }
+            Self {
+                templates: HashMap::new(),
+            }
         })
     }
 
@@ -147,7 +192,9 @@ impl TemplateRegistry {
 
     /// Get generic config for a template key (if it has one).
     pub fn get_generic_config(&self, key: &str) -> Option<&crate::config::GenericConfig> {
-        self.templates.get(key).and_then(|lt| lt.generic_config.as_ref())
+        self.templates
+            .get(key)
+            .and_then(|lt| lt.generic_config.as_ref())
     }
 
     /// List all template definitions.
@@ -176,11 +223,8 @@ pub fn get_template_definition(key: &str) -> Option<TemplateDefinition> {
 /// Returns all registered template definitions.
 pub fn list_template_definitions() -> Vec<TemplateDefinition> {
     let registry = TemplateRegistry::global();
-    let mut defs: Vec<TemplateDefinition> = registry
-        .all_definitions()
-        .into_iter()
-        .cloned()
-        .collect();
+    let mut defs: Vec<TemplateDefinition> =
+        registry.all_definitions().into_iter().cloned().collect();
     // Sort by key for deterministic ordering
     defs.sort_by(|a, b| a.key.cmp(&b.key));
     defs
@@ -197,9 +241,8 @@ pub fn check_prerequisites(
     conn: &rusqlite::Connection,
     template_key: &str,
 ) -> Result<Vec<PrerequisiteResult>> {
-    let definition = get_template_definition(template_key).ok_or_else(|| {
-        GargoyleError::Schema(format!("Unknown template: '{}'", template_key))
-    })?;
+    let definition = get_template_definition(template_key)
+        .ok_or_else(|| GargoyleError::Schema(format!("Unknown template: '{}'", template_key)))?;
 
     let mut results = Vec::new();
 
@@ -219,15 +262,16 @@ pub fn check_prerequisites(
                 suggested_template: None,
             });
         } else {
-            let suggestion_hint = prereq.suggested_template.as_ref()
+            let suggestion_hint = prereq
+                .suggested_template
+                .as_ref()
                 .map(|t| format!(" Try running '{}' first.", t))
                 .unwrap_or_default();
             results.push(PrerequisiteResult {
                 satisfied: false,
                 message: Some(format!(
                     "Advisory: this template needs at least {} {}(s), found {}. {}.{}",
-                    prereq.min_count, prereq.entity_type, count,
-                    prereq.reason, suggestion_hint
+                    prereq.min_count, prereq.entity_type, count, prereq.reason, suggestion_hint
                 )),
                 suggested_template: prereq.suggested_template.clone(),
             });
@@ -242,8 +286,11 @@ pub fn check_prerequisites(
 // =============================================================================
 
 /// Generate PatchOps for a given template key.
-/// Dispatches to the appropriate template-specific generator.
-/// Some templates need `conn` to look up existing entities.
+///
+/// Discovery order:
+/// 1. Check registry for generic config (dynamically loaded from front matter)
+/// 2. Fall back to legacy hardcoded generators for complex templates
+/// 3. Return empty ops for prompt-only templates (no entity production)
 fn generate_ops(
     conn: &rusqlite::Connection,
     key: &str,
@@ -251,6 +298,12 @@ fn generate_ops(
     run_id: &str,
     force: bool,
 ) -> Result<Vec<PatchOp>> {
+    // First: check for dynamically loaded generic config from front matter
+    if let Some(config) = generic_template_config(key) {
+        return generate_generic_template_ops(key, &config, params);
+    }
+
+    // Second: legacy hardcoded generators for complex templates that need custom logic
     match key {
         "analytics-metric-tree" => generate_metric_tree_ops(params, run_id),
         "analytics-experiment-plan" => generate_experiment_plan_ops(conn, params, run_id, force),
@@ -259,8 +312,9 @@ fn generate_ops(
         }
         "mkt-icp-definition" => generate_icp_definition_ops(params, run_id),
         "mkt-competitive-intel" => generate_competitive_intel_ops(params, run_id),
-        "mkt-positioning-narrative" => generate_positioning_narrative_ops(conn, params, run_id, force),
-        // Dev templates (enriched)
+        "mkt-positioning-narrative" => {
+            generate_positioning_narrative_ops(conn, params, run_id, force)
+        }
         "dev-adr-writer" => generate_adr_writer_ops(params, run_id),
         "dev-api-design" => generate_api_design_ops(params, run_id),
         "dev-architecture-review" => generate_architecture_review_ops(params, run_id),
@@ -270,23 +324,22 @@ fn generate_ops(
         "dev-db-schema" => generate_db_schema_ops(params, run_id),
         "dev-migration-plan" => generate_migration_plan_ops(params, run_id),
         "dev-security-threat-model" => generate_security_threat_model_ops(params, run_id),
-        // Org templates (enriched)
         "org-project-charter" => generate_project_charter_ops(params, run_id),
         "org-project-plan" => generate_project_plan_ops(params, run_id),
         "org-decision-log" => generate_decision_log_ops(params, run_id),
         "org-meeting-brief" => generate_meeting_brief_ops(params, run_id),
         "org-retrospective" => generate_retrospective_ops(params, run_id),
-        // Content templates (enriched)
         "content-case-study-builder" => generate_case_study_builder_ops(params, run_id),
         "content-creative-brief-builder" => generate_creative_brief_builder_ops(params, run_id),
         "content-strategy-pillars-seo" => generate_strategy_pillars_seo_ops(params, run_id),
-        // Wave 2B+ templates use the generic generator
+        // Third: prompt-only templates return empty ops (valid template, just no entity production)
         _ => {
-            if let Some(config) = generic_template_config(key) {
-                generate_generic_template_ops(key, &config, params)
+            // Verify template exists in registry before returning empty ops
+            if TemplateRegistry::global().get(key).is_some() {
+                Ok(vec![])
             } else {
                 Err(GargoyleError::Schema(format!(
-                    "Template '{}' does not have an implementation yet",
+                    "Unknown template: '{}'. Available templates are loaded from the templates/ directory.",
                     key
                 )))
             }
@@ -367,10 +420,7 @@ fn read_produced_relations(
 /// 4. Apply PatchSet atomically
 /// 5. Log the run
 /// 6. Return TemplateOutput
-pub fn run_template(
-    conn: &rusqlite::Connection,
-    input: &TemplateInput,
-) -> Result<TemplateOutput> {
+pub fn run_template(conn: &rusqlite::Connection, input: &TemplateInput) -> Result<TemplateOutput> {
     // 1. Look up the template definition
     let definition = get_template_definition(&input.template_key).ok_or_else(|| {
         GargoyleError::Schema(format!("Unknown template: '{}'", input.template_key))
@@ -392,7 +442,13 @@ pub fn run_template(
     let run_id = uuid::Uuid::new_v4().to_string();
 
     // 4. Generate PatchOps
-    let ops = generate_ops(conn, &input.template_key, &input.params, &run_id, input.force)?;
+    let ops = generate_ops(
+        conn,
+        &input.template_key,
+        &input.params,
+        &run_id,
+        input.force,
+    )?;
 
     // 5. Build and apply PatchSet
     let patch_set = PatchSet {
@@ -403,8 +459,8 @@ pub fn run_template(
     let patch_result = apply_patch_set(conn, &patch_set)?;
 
     // 6. Build outputs_snapshot from patch_result
-    let outputs_snapshot = serde_json::to_value(&patch_result)
-        .unwrap_or_else(|_| serde_json::json!({}));
+    let outputs_snapshot =
+        serde_json::to_value(&patch_result).unwrap_or_else(|_| serde_json::json!({}));
 
     // 7. Log the run
     let now = chrono::Utc::now()
@@ -418,8 +474,7 @@ pub fn run_template(
         template_category: definition.category.clone(),
         inputs_snapshot: input.params.clone(),
         outputs_snapshot,
-        patch_set: serde_json::to_value(&patch_set)
-            .unwrap_or_else(|_| serde_json::json!({})),
+        patch_set: serde_json::to_value(&patch_set).unwrap_or_else(|_| serde_json::json!({})),
         status: if patch_result.errors.is_empty() {
             RunStatus::Applied
         } else {
@@ -464,10 +519,7 @@ pub fn run_template(
 ///   - customer_journey: String (e.g., "Acquisition -> Activation -> Revenue -> Retention -> Referral")
 ///
 /// Output: 5-7 metric entities + relations between them.
-fn generate_metric_tree_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_metric_tree_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let business_model = params
         .get("business_model")
         .and_then(|v| v.as_str())
@@ -521,10 +573,7 @@ fn generate_metric_tree_ops(
         },
         MetricDef {
             title: format!("{} Revenue", business_model),
-            body: format!(
-                "Revenue metric for {} business model.",
-                business_model
-            ),
+            body: format!("Revenue metric for {} business model.", business_model),
             canonical_fields: serde_json::json!({
                 "trend": "up",
                 "data_source": "finance"
@@ -532,10 +581,7 @@ fn generate_metric_tree_ops(
         },
         MetricDef {
             title: "Churn Rate".to_string(),
-            body: format!(
-                "Customer churn rate for {} model.",
-                business_model
-            ),
+            body: format!("Customer churn rate for {} model.", business_model),
             canonical_fields: serde_json::json!({
                 "trend": "down",
                 "data_source": "product"
@@ -543,10 +589,7 @@ fn generate_metric_tree_ops(
         },
         MetricDef {
             title: "Referral Rate".to_string(),
-            body: format!(
-                "Referral/viral coefficient for {} model.",
-                business_model
-            ),
+            body: format!("Referral/viral coefficient for {} model.", business_model),
             canonical_fields: serde_json::json!({
                 "trend": "flat",
                 "data_source": "marketing"
@@ -677,12 +720,12 @@ fn generate_experiment_plan_ops(
         .get("primary_metric")
         .and_then(|v| v.as_str())
         .unwrap_or("primary_metric");
-    let metric_id = params
-        .get("metric_id")
-        .and_then(|v| v.as_str());
+    let metric_id = params.get("metric_id").and_then(|v| v.as_str());
 
     if metric_id.is_none() && !force {
-        return Err(GargoyleError::Schema("Missing required param: metric_id".to_string()));
+        return Err(GargoyleError::Schema(
+            "Missing required param: metric_id".to_string(),
+        ));
     }
 
     // Verify metric exists and is not deleted (skip if force and no metric_id)
@@ -781,12 +824,12 @@ fn generate_anomaly_investigation_entity_ops(
     _run_id: &str,
     force: bool,
 ) -> Result<Vec<PatchOp>> {
-    let experiment_id = params
-        .get("experiment_id")
-        .and_then(|v| v.as_str());
+    let experiment_id = params.get("experiment_id").and_then(|v| v.as_str());
 
     if experiment_id.is_none() && !force {
-        return Err(GargoyleError::Schema("Missing required param: experiment_id".to_string()));
+        return Err(GargoyleError::Schema(
+            "Missing required param: experiment_id".to_string(),
+        ));
     }
 
     let anomaly_description = params
@@ -905,7 +948,13 @@ pub fn run_template_full(
     let run_id = uuid::Uuid::new_v4().to_string();
 
     // 4. Generate entity PatchOps (phase 1)
-    let entity_ops = generate_ops(conn, &input.template_key, &input.params, &run_id, input.force)?;
+    let entity_ops = generate_ops(
+        conn,
+        &input.template_key,
+        &input.params,
+        &run_id,
+        input.force,
+    )?;
 
     // 5. Apply entity PatchSet
     let entity_patch_set = PatchSet {
@@ -947,8 +996,8 @@ pub fn run_template_full(
     }
 
     // 7. Build outputs_snapshot
-    let outputs_snapshot = serde_json::to_value(&combined_result)
-        .unwrap_or_else(|_| serde_json::json!({}));
+    let outputs_snapshot =
+        serde_json::to_value(&combined_result).unwrap_or_else(|_| serde_json::json!({}));
 
     // 8. Log the run
     let now = chrono::Utc::now()
@@ -967,8 +1016,7 @@ pub fn run_template_full(
         template_category: definition.category.clone(),
         inputs_snapshot: input.params.clone(),
         outputs_snapshot,
-        patch_set: serde_json::to_value(&full_patch_set)
-            .unwrap_or_else(|_| serde_json::json!({})),
+        patch_set: serde_json::to_value(&full_patch_set).unwrap_or_else(|_| serde_json::json!({})),
         status: if combined_result.errors.is_empty() {
             RunStatus::Applied
         } else {
@@ -1026,7 +1074,11 @@ fn generate_phase2_ops(
                 .filter_map(|op| op.entity_id.clone())
                 .collect();
 
-            Ok(create_metric_tree_relations(primary_id, &funnel_ids, run_id))
+            Ok(create_metric_tree_relations(
+                primary_id,
+                &funnel_ids,
+                run_id,
+            ))
         }
         "analytics-experiment-plan" => {
             // Phase 1 creates the experiment entity.
@@ -1039,21 +1091,17 @@ fn generate_phase2_ops(
                 .as_ref()
                 .expect("Experiment entity should have entity_id");
 
-            let metric_id = params
-                .get("metric_id")
-                .and_then(|v| v.as_str());
+            let metric_id = params.get("metric_id").and_then(|v| v.as_str());
 
             if let Some(mid) = metric_id {
-                Ok(create_experiment_plan_relations(
-                    experiment_id,
-                    mid,
-                    run_id,
-                ))
+                Ok(create_experiment_plan_relations(experiment_id, mid, run_id))
             } else if force {
                 // Skip relations when force=true and no metric_id provided
                 Ok(vec![])
             } else {
-                Err(GargoyleError::Schema("Missing required param: metric_id".to_string()))
+                Err(GargoyleError::Schema(
+                    "Missing required param: metric_id".to_string(),
+                ))
             }
         }
         "analytics-anomaly-detection-investigation" => {
@@ -1067,9 +1115,7 @@ fn generate_phase2_ops(
                 .as_ref()
                 .expect("Result entity should have entity_id");
 
-            let experiment_id = params
-                .get("experiment_id")
-                .and_then(|v| v.as_str());
+            let experiment_id = params.get("experiment_id").and_then(|v| v.as_str());
 
             let time_window = params
                 .get("time_window")
@@ -1103,7 +1149,9 @@ fn generate_phase2_ops(
                 // Skip relations when force=true and no experiment_id provided
                 Ok(vec![])
             } else {
-                Err(GargoyleError::Schema("Missing required param: experiment_id".to_string()))
+                Err(GargoyleError::Schema(
+                    "Missing required param: experiment_id".to_string(),
+                ))
             }
         }
         "mkt-icp-definition" => {
@@ -1140,9 +1188,7 @@ fn generate_phase2_ops(
                 .as_ref()
                 .expect("Decision entity should have entity_id");
 
-            let person_id = params
-                .get("person_id")
-                .and_then(|v| v.as_str());
+            let person_id = params.get("person_id").and_then(|v| v.as_str());
 
             if let Some(pid) = person_id {
                 Ok(vec![PatchOp::CreateRelation(CreateRelationPayload {
@@ -1158,7 +1204,9 @@ fn generate_phase2_ops(
                 // Skip relations when force=true and no person_id provided
                 Ok(vec![])
             } else {
-                Err(GargoyleError::Schema("Missing required param: person_id".to_string()))
+                Err(GargoyleError::Schema(
+                    "Missing required param: person_id".to_string(),
+                ))
             }
         }
         "org-decision-log" => {
@@ -1325,10 +1373,7 @@ fn generate_generic_template_ops(
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    let category = template_key
-        .split('-')
-        .next()
-        .unwrap_or("general");
+    let category = template_key.split('-').next().unwrap_or("general");
 
     let mut ops = Vec::new();
 
@@ -1356,7 +1401,11 @@ fn generate_generic_template_ops(
                 canonical_fields: build_generic_canonical_fields(&config.entity_type, params),
                 body_md: Some(format!(
                     "# {}: {} (Part {})\n\nGenerated by template: `{}`\n\n{}",
-                    config.title_prefix, title_input, i + 1, template_key, description
+                    config.title_prefix,
+                    title_input,
+                    i + 1,
+                    template_key,
+                    description
                 )),
                 status: Some(config.default_status.clone()),
                 category: Some(category.to_string()),
@@ -1377,28 +1426,43 @@ fn build_generic_canonical_fields(
 ) -> serde_json::Value {
     match entity_type {
         "decision" => {
-            let owner = params.get("owner").and_then(|v| v.as_str()).unwrap_or("template-author");
-            let rationale = params.get("rationale").or_else(|| params.get("description"))
-                .and_then(|v| v.as_str()).unwrap_or("Generated by template");
+            let owner = params
+                .get("owner")
+                .and_then(|v| v.as_str())
+                .unwrap_or("template-author");
+            let rationale = params
+                .get("rationale")
+                .or_else(|| params.get("description"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Generated by template");
             serde_json::json!({
                 "owner_id": owner,
                 "rationale": rationale,
             })
         }
         "spec" => {
-            let author = params.get("author").and_then(|v| v.as_str()).unwrap_or("template");
+            let author = params
+                .get("author")
+                .and_then(|v| v.as_str())
+                .unwrap_or("template");
             serde_json::json!({
                 "author": author,
             })
         }
         "campaign" => {
-            let objective = params.get("objective").and_then(|v| v.as_str()).unwrap_or("TBD");
+            let objective = params
+                .get("objective")
+                .and_then(|v| v.as_str())
+                .unwrap_or("TBD");
             serde_json::json!({
                 "objective": objective,
             })
         }
         "playbook" => {
-            let owner = params.get("owner").and_then(|v| v.as_str()).unwrap_or("template");
+            let owner = params
+                .get("owner")
+                .and_then(|v| v.as_str())
+                .unwrap_or("template");
             serde_json::json!({
                 "owner": owner,
             })
@@ -1419,10 +1483,7 @@ fn build_generic_canonical_fields(
 ///   - market_segment: String
 ///
 /// Output: 1-3 person entities (ICP personas)
-fn generate_icp_definition_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_icp_definition_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let product_description = params
         .get("product_description")
         .and_then(|v| v.as_str())
@@ -1437,9 +1498,21 @@ fn generate_icp_definition_ops(
         .unwrap_or("General");
 
     let personas = vec![
-        ("Primary Decision Maker", "executive", "Drives purchase decisions and budget approval"),
-        ("Champion / End User", "practitioner", "Daily user who advocates internally for the product"),
-        ("Technical Evaluator", "technical", "Evaluates technical fit, security, and integration requirements"),
+        (
+            "Primary Decision Maker",
+            "executive",
+            "Drives purchase decisions and budget approval",
+        ),
+        (
+            "Champion / End User",
+            "practitioner",
+            "Daily user who advocates internally for the product",
+        ),
+        (
+            "Technical Evaluator",
+            "technical",
+            "Evaluates technical fit, security, and integration requirements",
+        ),
     ];
 
     let mut ops = Vec::new();
@@ -1594,12 +1667,12 @@ fn generate_positioning_narrative_ops(
         .get("category")
         .and_then(|v| v.as_str())
         .unwrap_or("General");
-    let person_id = params
-        .get("person_id")
-        .and_then(|v| v.as_str());
+    let person_id = params.get("person_id").and_then(|v| v.as_str());
 
     if person_id.is_none() && !force {
-        return Err(GargoyleError::Schema("Missing required param: person_id".to_string()));
+        return Err(GargoyleError::Schema(
+            "Missing required param: person_id".to_string(),
+        ));
     }
 
     // Verify the ICP person entity exists (skip if force and no person_id)
@@ -1666,10 +1739,7 @@ fn generate_positioning_narrative_ops(
 ///   - status: String (proposed/accepted/deprecated/superseded)
 ///
 /// Output: 1 decision entity with rich canonical fields
-fn generate_adr_writer_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_adr_writer_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let decision_title = params
         .get("title")
         .or_else(|| params.get("decision_title"))
@@ -1715,8 +1785,13 @@ fn generate_adr_writer_ops(
             "# ADR: {}\n\n## Status\n{}\n\n## Context\n{}\n\n\
             ## Options Considered\n{}\n\n## Decision\n{}\n\n\
             ## Rationale\n{}\n\n## Consequences\n{}",
-            decision_title, status, context, options_considered,
-            chosen_option, rationale, consequences
+            decision_title,
+            status,
+            context,
+            options_considered,
+            chosen_option,
+            rationale,
+            consequences
         )),
         status: Some(status.to_string()),
         category: Some("adr".to_string()),
@@ -1743,10 +1818,7 @@ fn generate_adr_writer_ops(
 ///   - rate_limiting: String
 ///
 /// Output: 1 spec entity with rich canonical fields
-fn generate_api_design_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_api_design_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let api_name = params
         .get("title")
         .or_else(|| params.get("api_name"))
@@ -1806,8 +1878,7 @@ fn generate_api_design_ops(
             ## Authentication\n{}\n\n## Versioning Strategy\n{}\n\n\
             ## Rate Limiting\n{}\n\n## Endpoints\n{}\n\n\
             ## Error Handling\n_TBD_\n\n## Request/Response Formats\n_TBD_",
-            api_name, description, protocol, auth_method, versioning,
-            rate_limiting, endpoints_md
+            api_name, description, protocol, auth_method, versioning, rate_limiting, endpoints_md
         )),
         status: Some("draft".to_string()),
         category: Some("dev".to_string()),
@@ -1866,7 +1937,12 @@ fn generate_architecture_review_ops(
 
     let components_md = component_list
         .iter()
-        .map(|c| format!("### {}\n- **Status**: _TBD_\n- **Risks**: _TBD_\n- **Recommendations**: _TBD_", c))
+        .map(|c| {
+            format!(
+                "### {}\n- **Status**: _TBD_\n- **Risks**: _TBD_\n- **Recommendations**: _TBD_",
+                c
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n\n");
 
@@ -1911,10 +1987,7 @@ fn generate_architecture_review_ops(
 ///   - automation_approach: String
 ///
 /// Output: 1 spec entity with rich canonical fields
-fn generate_test_plan_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_test_plan_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let project_name = params
         .get("title")
         .or_else(|| params.get("project_name"))
@@ -1966,8 +2039,12 @@ fn generate_test_plan_ops(
             ### Unit Tests\n_TBD_\n\n### Integration Tests\n_TBD_\n\n\
             ### End-to-End Tests\n_TBD_\n\n### Performance Tests\n_TBD_\n\n\
             ## Exit Criteria\n_TBD_",
-            project_name, test_strategy, coverage_targets,
-            test_environments, risk_areas, automation_approach
+            project_name,
+            test_strategy,
+            coverage_targets,
+            test_environments,
+            risk_areas,
+            automation_approach
         )),
         status: Some("draft".to_string()),
         category: Some("dev".to_string()),
@@ -1993,10 +2070,7 @@ fn generate_test_plan_ops(
 ///   - acceptance_criteria: String
 ///
 /// Output: 1 spec entity with rich canonical fields
-fn generate_prd_to_techspec_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_prd_to_techspec_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let feature_name = params
         .get("title")
         .or_else(|| params.get("feature_name"))
@@ -2047,8 +2121,12 @@ fn generate_prd_to_techspec_ops(
             ## Acceptance Criteria\n{}\n\n## System Design\n_TBD_\n\n\
             ## Data Model Changes\n_TBD_\n\n## API Changes\n_TBD_\n\n\
             ## Migration Plan\n_TBD_\n\n## Rollout Strategy\n_TBD_",
-            feature_name, prd_summary, technical_approach,
-            dependencies, estimated_effort, acceptance_criteria
+            feature_name,
+            prd_summary,
+            technical_approach,
+            dependencies,
+            estimated_effort,
+            acceptance_criteria
         )),
         status: Some("draft".to_string()),
         category: Some("dev".to_string()),
@@ -2137,8 +2215,7 @@ fn generate_requirements_to_spec_ops(
             ## Functional Requirements\n_TBD_\n\n\
             ## Non-Functional Requirements\n_TBD_\n\n\
             ## Out of Scope\n_TBD_\n\n## Assumptions\n_TBD_",
-            project_name, scope, stakeholders, requirements,
-            constraints, priority_level
+            project_name, scope, stakeholders, requirements, constraints, priority_level
         )),
         status: Some("draft".to_string()),
         category: Some("dev".to_string()),
@@ -2164,10 +2241,7 @@ fn generate_requirements_to_spec_ops(
 ///   - migration_approach: String
 ///
 /// Output: 1 spec entity with rich canonical fields
-fn generate_db_schema_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_db_schema_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let schema_name = params
         .get("title")
         .or_else(|| params.get("schema_name"))
@@ -2202,7 +2276,12 @@ fn generate_db_schema_ops(
 
     let tables_md = table_list
         .iter()
-        .map(|t| format!("### `{}`\n- **Columns**: _TBD_\n- **Indexes**: _TBD_\n- **Constraints**: _TBD_", t))
+        .map(|t| {
+            format!(
+                "### `{}`\n- **Columns**: _TBD_\n- **Indexes**: _TBD_\n- **Constraints**: _TBD_",
+                t
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n\n");
 
@@ -2222,8 +2301,12 @@ fn generate_db_schema_ops(
             "# DB Schema: {}\n\n## Database\n{}\n\n## Tables\n\n{}\n\n\
             ## Relationships\n{}\n\n## Indexing Strategy\n{}\n\n\
             ## Migration Approach\n{}\n\n## Performance Considerations\n_TBD_",
-            schema_name, database_type, tables_md, relationships,
-            indexing_strategy, migration_approach
+            schema_name,
+            database_type,
+            tables_md,
+            relationships,
+            indexing_strategy,
+            migration_approach
         )),
         status: Some("draft".to_string()),
         category: Some("dev".to_string()),
@@ -2250,10 +2333,7 @@ fn generate_db_schema_ops(
 ///   - risk_level: String
 ///
 /// Output: 1 spec entity with rich canonical fields
-fn generate_migration_plan_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_migration_plan_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let migration_name = params
         .get("title")
         .or_else(|| params.get("migration_name"))
@@ -2303,8 +2383,13 @@ fn generate_migration_plan_ops(
             ## Estimated Downtime\n{}\n\n## Risk Level\n{}\n\n\
             ## Pre-Migration Checklist\n_TBD_\n\n## Migration Steps\n_TBD_\n\n\
             ## Validation Steps\n_TBD_\n\n## Post-Migration Tasks\n_TBD_",
-            migration_name, source_system, target_system, data_scope,
-            rollback_strategy, estimated_downtime, risk_level
+            migration_name,
+            source_system,
+            target_system,
+            data_scope,
+            rollback_strategy,
+            estimated_downtime,
+            risk_level
         )),
         status: Some("draft".to_string()),
         category: Some("dev".to_string()),
@@ -2384,8 +2469,12 @@ fn generate_security_threat_model_ops(
             ## Data Classification\n{}\n\n\
             ## Threats Identified\n_TBD_\n\n## Mitigations\n_TBD_\n\n\
             ## Residual Risk\n_TBD_\n\n## Recommendations\n_TBD_",
-            system_name, threat_model_type, assets, trust_boundaries,
-            attack_surface, data_classification
+            system_name,
+            threat_model_type,
+            assets,
+            trust_boundaries,
+            attack_surface,
+            data_classification
         )),
         status: Some("draft".to_string()),
         category: Some("dev".to_string()),
@@ -2413,10 +2502,7 @@ fn generate_security_threat_model_ops(
 ///   - risks: String
 ///
 /// Output: 1 project entity with rich canonical fields
-fn generate_project_charter_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_project_charter_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let project_name = params
         .get("title")
         .or_else(|| params.get("project_name"))
@@ -2475,8 +2561,7 @@ fn generate_project_charter_ops(
             ## Timeline\n{}\n\n## Budget\n{}\n\n## Sponsor\n{}\n\n\
             ## Team\n{}\n\n## Risks\n{}\n\n\
             ## Deliverables\n_TBD_\n\n## Milestones\n_TBD_\n\n## Constraints\n_TBD_",
-            project_name, objective, success_criteria, timeline,
-            budget, sponsor, team, risks
+            project_name, objective, success_criteria, timeline, budget, sponsor, team, risks
         )),
         status: Some("planning".to_string()),
         category: Some("org".to_string()),
@@ -2503,10 +2588,7 @@ fn generate_project_charter_ops(
 ///   - end_date: String
 ///
 /// Output: 1 spec entity with rich canonical fields
-fn generate_project_plan_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_project_plan_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let project_name = params
         .get("title")
         .or_else(|| params.get("project_name"))
@@ -2574,8 +2656,7 @@ fn generate_project_plan_ops(
             ## Phases\n\n{}\n\n## Milestones\n{}\n\n\
             ## Resources\n{}\n\n## Dependencies\n{}\n\n\
             ## Risk Mitigation\n_TBD_\n\n## Communication Plan\n_TBD_",
-            project_name, start_date, end_date, phases_md,
-            milestones, resources, dependencies
+            project_name, start_date, end_date, phases_md, milestones, resources, dependencies
         )),
         status: Some("draft".to_string()),
         category: Some("org".to_string()),
@@ -2599,10 +2680,7 @@ fn generate_project_plan_ops(
 ///   - context: String
 ///
 /// Output: 1+ decision entities (one per decision listed)
-fn generate_decision_log_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_decision_log_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let project_name = params
         .get("title")
         .or_else(|| params.get("project_name"))
@@ -2644,7 +2722,12 @@ fn generate_decision_log_ops(
                 ## Context\n{}\n\n## Decision\n{}\n\n\
                 ## Rationale\n_TBD_\n\n## Alternatives Considered\n_TBD_\n\n\
                 ## Impact\n_TBD_",
-                i + 1, decision, project_name, decision_maker, context, decision
+                i + 1,
+                decision,
+                project_name,
+                decision_maker,
+                context,
+                decision
             )),
             status: Some("proposed".to_string()),
             category: Some("org".to_string()),
@@ -2672,10 +2755,7 @@ fn generate_decision_log_ops(
 ///   - pre_reads: String
 ///
 /// Output: 1 session entity with rich canonical fields
-fn generate_meeting_brief_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_meeting_brief_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let meeting_name = params
         .get("title")
         .or_else(|| params.get("meeting_name"))
@@ -2742,8 +2822,7 @@ fn generate_meeting_brief_ops(
             **Participants**: {}\n\n## Objective\n{}\n\n## Agenda\n{}\n\n\
             ## Pre-Reads\n{}\n\n## Notes\n_To be filled during meeting_\n\n\
             ## Action Items\n_To be captured during meeting_",
-            meeting_name, meeting_date, duration, participants,
-            objective, agenda_md, pre_reads
+            meeting_name, meeting_date, duration, participants, objective, agenda_md, pre_reads
         )),
         status: Some("draft".to_string()),
         category: Some("org".to_string()),
@@ -2769,10 +2848,7 @@ fn generate_meeting_brief_ops(
 ///   - sprint_dates: String
 ///
 /// Output: 1 session entity + 3 note entities (went_well, improvements, actions)
-fn generate_retrospective_ops(
-    params: &serde_json::Value,
-    _run_id: &str,
-) -> Result<Vec<PatchOp>> {
+fn generate_retrospective_ops(params: &serde_json::Value, _run_id: &str) -> Result<Vec<PatchOp>> {
     let sprint_name = params
         .get("title")
         .or_else(|| params.get("sprint_name"))
@@ -2861,9 +2937,7 @@ fn generate_retrospective_ops(
             "tags": "retrospective,went-well",
             "items": well_items,
         }),
-        body_md: Some(format!(
-            "# What Went Well\n\n{}", well_md
-        )),
+        body_md: Some(format!("# What Went Well\n\n{}", well_md)),
         status: Some("draft".to_string()),
         category: Some("org".to_string()),
         priority: None,
@@ -2887,7 +2961,8 @@ fn generate_retrospective_ops(
             "items": improve_items,
         }),
         body_md: Some(format!(
-            "# What Didn't Go Well / Improvements\n\n{}", improve_md
+            "# What Didn't Go Well / Improvements\n\n{}",
+            improve_md
         )),
         status: Some("draft".to_string()),
         category: Some("org".to_string()),
@@ -2911,9 +2986,7 @@ fn generate_retrospective_ops(
             "tags": "retrospective,action-items",
             "items": action_list,
         }),
-        body_md: Some(format!(
-            "# Action Items\n\n{}", actions_md
-        )),
+        body_md: Some(format!("# Action Items\n\n{}", actions_md)),
         status: Some("active".to_string()),
         category: Some("org".to_string()),
         priority: Some(1),
@@ -2964,10 +3037,7 @@ fn generate_case_study_builder_ops(
         .get("results")
         .and_then(|v| v.as_str())
         .unwrap_or("Results to be quantified");
-    let quote = params
-        .get("quote")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let quote = params.get("quote").and_then(|v| v.as_str()).unwrap_or("");
     let product = params
         .get("product")
         .and_then(|v| v.as_str())
@@ -2997,8 +3067,7 @@ fn generate_case_study_builder_ops(
             ## The Challenge\n{}\n\n## The Solution\n{}\n\n\
             ## The Results\n{}\n\n## Customer Quote\n{}\n\n\
             ## Key Metrics\n_TBD_\n\n## Lessons Learned\n_TBD_",
-            customer_name, industry, product, challenge, solution,
-            results, quote_section
+            customer_name, industry, product, challenge, solution, results, quote_section
         )),
         status: Some("draft".to_string()),
         category: Some("content".to_string()),
@@ -3096,8 +3165,14 @@ fn generate_creative_brief_builder_ops(
             ## Tone & Voice\n{}\n\n## Deliverables\n{}\n\n\
             ## Brand Guidelines\n{}\n\n## Deadline\n{}\n\n\
             ## Inspiration / References\n_TBD_\n\n## Budget\n_TBD_",
-            project_name, objective, target_audience, key_message,
-            tone, deliverables_md, brand_guidelines, deadline
+            project_name,
+            objective,
+            target_audience,
+            key_message,
+            tone,
+            deliverables_md,
+            brand_guidelines,
+            deadline
         )),
         status: Some("draft".to_string()),
         category: Some("content".to_string()),
@@ -3192,9 +3267,16 @@ fn generate_strategy_pillars_seo_ops(
             ## Content Goals\n{}\n\n## Primary Keywords\n{}\n\n\
             ## Content Pillars\n{}\n\n## Competitor Landscape\n{}\n\n\
             ## Distribution Strategy\n_TBD_\n\n## Success Metrics\n_TBD_",
-            brand_name, target_audience, content_goals, primary_keywords,
+            brand_name,
+            target_audience,
+            content_goals,
+            primary_keywords,
             pillars_md,
-            if competitor_domains.is_empty() { "_TBD_" } else { competitor_domains }
+            if competitor_domains.is_empty() {
+                "_TBD_"
+            } else {
+                competitor_domains
+            }
         )),
         status: Some("draft".to_string()),
         category: Some("content".to_string()),
@@ -3219,7 +3301,9 @@ fn generate_strategy_pillars_seo_ops(
                 ## Topic Clusters\n_TBD_\n\n## Target Keywords\n_TBD_\n\n\
                 ## Content Ideas\n_TBD_\n\n## Publishing Cadence\n_TBD_\n\n\
                 ## Success Metrics\n_TBD_",
-                pillar, brand_name, i + 1
+                pillar,
+                brand_name,
+                i + 1
             )),
             status: Some("draft".to_string()),
             category: Some("content".to_string()),
@@ -3319,7 +3403,10 @@ mod tests {
     #[test]
     fn test_list_template_definitions() {
         let templates = list_template_definitions();
-        assert!(!templates.is_empty(), "Should have at least some templates loaded");
+        assert!(
+            !templates.is_empty(),
+            "Should have at least some templates loaded"
+        );
 
         let keys: Vec<&str> = templates.iter().map(|t| t.key.as_str()).collect();
         // Verify original templates
@@ -3356,8 +3443,16 @@ mod tests {
         assert!(!results[0].satisfied);
         assert!(results[0].message.is_some());
         let msg = results[0].message.as_ref().unwrap();
-        assert!(msg.contains("metric"), "Message should mention metric: {}", msg);
-        assert!(msg.contains("at least 1"), "Message should mention 'at least 1': {}", msg);
+        assert!(
+            msg.contains("metric"),
+            "Message should mention metric: {}",
+            msg
+        );
+        assert!(
+            msg.contains("at least 1"),
+            "Message should mention 'at least 1': {}",
+            msg
+        );
         // Advisory prereqs should include suggested_template
         assert_eq!(
             results[0].suggested_template.as_deref(),
@@ -3667,7 +3762,11 @@ mod tests {
 
         for (id, entity_type, source, prov_run_id) in &rows {
             assert_eq!(entity_type, "metric", "Entity {} should be metric", id);
-            assert_eq!(source, "template", "Entity {} should have source=template", id);
+            assert_eq!(
+                source, "template",
+                "Entity {} should have source=template",
+                id
+            );
             assert_eq!(prov_run_id, &output.run_id);
         }
     }

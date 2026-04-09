@@ -1,0 +1,62 @@
+version = 1
+statuses = ["draft", "complete", "missed"]
+
+[[fields]]
+name = "checkin_date"
+type = "String"
+required = true
+description = "ISO date of the check-in (YYYY-MM-DD)"
+
+[[fields]]
+name = "github_contributions"
+type = "Number"
+required = false
+description = "Number of GitHub contributions for the day"
+
+[[fields]]
+name = "projects_worked"
+type = "String"
+required = false
+description = "Comma-separated list of projects touched (e.g. erasmus, nikaxu, gargoyle)"
+
+[[fields]]
+name = "work_summary"
+type = "String"
+required = false
+description = "Brief summary of key accomplishments"
+
+[[fields]]
+name = "subcontracts"
+type = "String"
+required = false
+description = "Contract-specific tracker (e.g. Jira ticket counts, sprint status). Format: contract_name:tickets_closed/in_review/in_progress"
+
+[[fields]]
+name = "blockers"
+type = "String"
+required = false
+description = "Any blockers or issues encountered"
+
+[[fields]]
+name = "backlog_items_added"
+type = "String"
+required = false
+description = "Future work items identified during the day"
+
+[[fields]]
+name = "schedule_adherence"
+type = { Enum = ["on_track", "partial", "off_track", "rest_day"] }
+required = false
+description = "Self-reported adherence to the daily schedule"
+
+[[fields]]
+name = "energy_level"
+type = { Enum = ["high", "medium", "low"] }
+required = false
+description = "General energy/focus level for the day"
+
+[[fields]]
+name = "dialysis_day"
+type = "Bool"
+required = false
+description = "Whether this was a dialysis day (affects available work hours)"

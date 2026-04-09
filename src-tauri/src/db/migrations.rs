@@ -1,5 +1,5 @@
-use rusqlite::Connection;
 use crate::error::Result;
+use rusqlite::Connection;
 
 const MIGRATION_001: &str = include_str!("../../migrations/001_initial_schema.sql");
 const MIGRATION_002: &str = include_str!("../../migrations/002_wave1_entity_types.sql");
@@ -7,6 +7,8 @@ const MIGRATION_003: &str = include_str!("../../migrations/003_wave2_entity_type
 const MIGRATION_004: &str = include_str!("../../migrations/004_wave3_entity_types.sql");
 const MIGRATION_005: &str = include_str!("../../migrations/005_new_entity_types.sql");
 const MIGRATION_006: &str = include_str!("../../migrations/006_chat_tables.sql");
+const MIGRATION_007: &str = include_str!("../../migrations/007_templates_table.sql");
+const MIGRATION_008: &str = include_str!("../../migrations/008_memory_tables.sql");
 
 /// Check whether a table already has a given column.
 fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
@@ -33,5 +35,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     }
 
     conn.execute_batch(MIGRATION_006)?;
+    conn.execute_batch(MIGRATION_007)?;
+    conn.execute_batch(MIGRATION_008)?;
     Ok(())
 }

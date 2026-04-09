@@ -1,0 +1,35 @@
+{
+  "name": "gargoyle-memory",
+  "version": "0.1.0",
+  "description": "Automatic memory surfacing and writing via the gargoyle knowledge graph. Searches on every prompt, writes observations after every response.",
+  "author": {
+    "name": "richa"
+  },
+  "hooks": "./hooks/hooks.json",
+  "skills": "./skills/",
+  "agents": "./agents/",
+  "mcpServers": {
+    "gargoyle": {
+      "command": "${user_config.gargoyle_mcp_path}",
+      "args": ["--db", "${user_config.db_path}"]
+    }
+  },
+  "userConfig": {
+    "db_path": {
+      "description": "Path to gargoyle SQLite database",
+      "sensitive": false
+    },
+    "gargoyle_mcp_path": {
+      "description": "Path to gargoyle-mcp executable",
+      "sensitive": false
+    },
+    "erasmus_text_url": {
+      "description": "Erasmus text inference endpoint (OpenAI-compatible)",
+      "sensitive": false
+    },
+    "erasmus_embed_url": {
+      "description": "Erasmus embedding endpoint",
+      "sensitive": false
+    }
+  }
+}

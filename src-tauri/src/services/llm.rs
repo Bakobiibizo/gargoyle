@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error, instrument, warn};
+
 use crate::error::{GargoyleError, Result};
 
 // ---------------------------------------------------------------------------
@@ -15,14 +17,20 @@ pub struct LlmConfig {
 impl LlmConfig {
     /// Load config from environment variables. Panics if any are missing.
     pub fn from_env() -> Result<Self> {
-        let api_key = std::env::var("OPENAI_API_KEY")
-            .map_err(|_| GargoyleError::Schema("Missing required env var: OPENAI_API_KEY".into()))?;
-        let base_url = std::env::var("OPENAI_BASE_URL")
-            .map_err(|_| GargoyleError::Schema("Missing required env var: OPENAI_BASE_URL".into()))?;
+        let api_key = std::env::var("OPENAI_API_KEY").map_err(|_| {
+            GargoyleError::Schema("Missing required env var: OPENAI_API_KEY".into())
+        })?;
+        let base_url = std::env::var("OPENAI_BASE_URL").map_err(|_| {
+            GargoyleError::Schema("Missing required env var: OPENAI_BASE_URL".into())
+        })?;
         let model = std::env::var("OPENAI_MODEL")
             .map_err(|_| GargoyleError::Schema("Missing required env var: OPENAI_MODEL".into()))?;
 
-        Ok(Self { api_key, base_url, model })
+        Ok(Self {
+            api_key,
+            base_url,
+            model,
+        })
     }
 }
 
@@ -78,7 +86,10 @@ pub struct ToolCall {
 }
 
 fn generate_tool_call_id() -> String {
-    format!("call_{}", uuid::Uuid::new_v4().to_string().replace('-', "")[..12].to_string())
+    format!(
+        "call_{}",
+        uuid::Uuid::new_v4().to_string().replace('-', "")[..12].to_string()
+    )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,11 +154,17 @@ impl LlmClient {
     }
 
     /// Send a chat completion request and return the full response.
-    pub fn chat(&self, messages: Vec<ChatMessage>, temperature: Option<f64>, max_tokens: Option<u32>) -> Result<ChatResponse> {
+    pub fn chat(
+        &self,
+        messages: Vec<ChatMessage>,
+        temperature: Option<f64>,
+        max_tokens: Option<u32>,
+    ) -> Result<ChatResponse> {
         self.chat_with_tools(messages, temperature, max_tokens, None)
     }
 
     /// Send a chat completion request with optional tool definitions.
+    #[instrument(skip(self, messages, tools), fields(model = %self.config.model, msg_count = messages.len()))]
     pub fn chat_with_tools(
         &self,
         messages: Vec<ChatMessage>,
@@ -155,7 +172,11 @@ impl LlmClient {
         max_tokens: Option<u32>,
         tools: Option<Vec<ToolDefinition>>,
     ) -> Result<ChatResponse> {
-        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
+        debug!(url = %url, "Sending LLM request");
 
         let request = ChatRequest {
             model: self.config.model.clone(),
@@ -165,7 +186,8 @@ impl LlmClient {
             tools,
         };
 
-        let response = self.http
+        let response = self
+            .http
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.config.api_key))
             .header("Content-Type", "application/json")
@@ -176,13 +198,17 @@ impl LlmClient {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().unwrap_or_default();
+            error!(status = %status, body = %body, "LLM API error");
             return Err(GargoyleError::Schema(format!(
-                "LLM API error ({}): {}", status, body
+                "LLM API error ({}): {}",
+                status, body
             )));
         }
+        debug!(status = %status, "LLM response received");
 
-        let body = response.text()
-            .map_err(|e| GargoyleError::Schema(format!("Failed to read LLM response body: {}", e)))?;
+        let body = response.text().map_err(|e| {
+            GargoyleError::Schema(format!("Failed to read LLM response body: {}", e))
+        })?;
 
         // Try strict deserialization first
         match serde_json::from_str::<ChatResponse>(&body) {
@@ -203,26 +229,36 @@ impl LlmClient {
                                     tool_calls: None,
                                     tool_call_id: None,
                                 },
-                                finish_reason: raw["choices"][0]["finish_reason"].as_str().map(|s| s.to_string()),
+                                finish_reason: raw["choices"][0]["finish_reason"]
+                                    .as_str()
+                                    .map(|s| s.to_string()),
                             }],
                             usage: None,
                         });
                     }
                 }
-                Err(GargoyleError::Schema(format!("Failed to parse LLM response: {}", strict_err)))
+                Err(GargoyleError::Schema(format!(
+                    "Failed to parse LLM response: {}",
+                    strict_err
+                )))
             }
         }
     }
 
     /// Convenience: send a single user message and get the assistant reply text.
     pub fn complete(&self, prompt: &str) -> Result<String> {
-        let messages = vec![
-            ChatMessage { role: "user".into(), content: Some(prompt.into()), tool_calls: None, tool_call_id: None },
-        ];
+        let messages = vec![ChatMessage {
+            role: "user".into(),
+            content: Some(prompt.into()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
 
         let response = self.chat(messages, None, None)?;
 
-        response.choices.first()
+        response
+            .choices
+            .first()
             .and_then(|c| c.message.content.clone())
             .ok_or_else(|| GargoyleError::Schema("LLM returned no choices".into()))
     }
@@ -230,13 +266,25 @@ impl LlmClient {
     /// Send a system + user message pair and get the assistant reply text.
     pub fn complete_with_system(&self, system: &str, user: &str) -> Result<String> {
         let messages = vec![
-            ChatMessage { role: "system".into(), content: Some(system.into()), tool_calls: None, tool_call_id: None },
-            ChatMessage { role: "user".into(), content: Some(user.into()), tool_calls: None, tool_call_id: None },
+            ChatMessage {
+                role: "system".into(),
+                content: Some(system.into()),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: Some(user.into()),
+                tool_calls: None,
+                tool_call_id: None,
+            },
         ];
 
         let response = self.chat(messages, None, None)?;
 
-        response.choices.first()
+        response
+            .choices
+            .first()
             .and_then(|c| c.message.content.clone())
             .ok_or_else(|| GargoyleError::Schema("LLM returned no choices".into()))
     }
@@ -269,9 +317,12 @@ mod tests {
     fn test_chat_request_serialization() {
         let request = ChatRequest {
             model: "test-model".into(),
-            messages: vec![
-                ChatMessage { role: "user".into(), content: Some("hello".into()), tool_calls: None, tool_call_id: None },
-            ],
+            messages: vec![ChatMessage {
+                role: "user".into(),
+                content: Some("hello".into()),
+                tool_calls: None,
+                tool_call_id: None,
+            }],
             temperature: Some(0.7),
             max_tokens: None,
             tools: None,
@@ -298,7 +349,10 @@ mod tests {
         }"#;
         let response: ChatResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.choices.len(), 1);
-        assert_eq!(response.choices[0].message.content.as_deref(), Some("Hello!"));
+        assert_eq!(
+            response.choices[0].message.content.as_deref(),
+            Some("Hello!")
+        );
         assert_eq!(response.usage.unwrap().total_tokens, Some(7));
     }
 

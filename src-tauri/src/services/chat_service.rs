@@ -1,8 +1,11 @@
 use rusqlite::{params, Connection};
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use crate::error::Result;
 use crate::models::chat::{ChatMessageRow, ChatSession};
+use crate::models::memory::MessageRole;
+use crate::services::memory_service::MemoryService;
 
 pub struct ChatService;
 
@@ -129,6 +132,52 @@ impl ChatService {
             tokens,
             created_at: now,
         })
+    }
+
+    pub fn add_message_with_memory(
+        conn: Arc<Mutex<Connection>>,
+        session_id: &str,
+        role: &str,
+        content: &str,
+        model: Option<&str>,
+        tokens: Option<i64>,
+    ) -> Result<ChatMessageRow> {
+        let guard = conn.lock().unwrap();
+        let result = Self::add_message(&guard, session_id, role, content, model, tokens)?;
+        drop(guard);
+
+        // Also record to memory system (use session_id as conversation_id for now)
+        let memory_service = MemoryService::new(conn.clone());
+        if memory_service.is_enabled() {
+            // Ensure conversation exists (create if needed)
+            let _ = Self::ensure_memory_conversation(&memory_service, session_id);
+
+            // Record segment
+            let mem_role = match role {
+                "user" => MessageRole::User,
+                "assistant" => MessageRole::Assistant,
+                "system" => MessageRole::System,
+                _ => MessageRole::User,
+            };
+            let _ = memory_service.add_segment(session_id, mem_role, content.to_string(), None);
+        }
+
+        Ok(result)
+    }
+
+    fn ensure_memory_conversation(memory_service: &MemoryService, session_id: &str) -> Result<()> {
+        // Check if conversation exists, create with same ID if not
+        if memory_service
+            .get_conversation(session_id)
+            .ok()
+            .flatten()
+            .is_none()
+        {
+            memory_service
+                .create_conversation_with_id(Some(session_id.to_string()))
+                .map_err(|e| crate::error::GargoyleError::Schema(e.to_string()))?;
+        }
+        Ok(())
     }
 
     pub fn list_messages(conn: &Connection, session_id: &str) -> Result<Vec<ChatMessageRow>> {

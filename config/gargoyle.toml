@@ -34,11 +34,18 @@ min_title_length_for_embedding = 4
 embedding_proximity_threshold = 0.92
 
 [indexer]
-embedding_dimensions = 128
-embedding_model = "mock-hash-v1"
+use_real_embeddings = true
+embedder_url = "https://erasmus.ngrok.dev"
+embedding_model = "BAAI/bge-small-en-v1.5"
 
 [graph]
 related_to_threshold = 0.20
 
 [llm]
 max_tool_iterations = 10
+
+[logging]
+level = "info"
+file_enabled = true
+log_dir = "./logs"
+file_prefix = "gargoyle"

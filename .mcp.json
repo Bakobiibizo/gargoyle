@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gargoyle": {
+      "command": "D:/apps/gargoyle/src-tauri/target/release/gargoyle-mcp.exe",
+      "args": ["--db", "D:/apps/gargoyle/src-tauri/gargoyle.db"]
+    }
+  }
+}

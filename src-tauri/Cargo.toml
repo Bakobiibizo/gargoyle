@@ -2,6 +2,7 @@
 name = "gargoyle"
 version = "0.1.0"
 edition = "2021"
+default-run = "gargoyle"
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -15,8 +16,16 @@ thiserror = "2"
 strsim = "0.11"
 proptest = "1"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 dotenvy = "0.15"
 toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+tracing-appender = "0.2"
+rmcp = { version = "1", features = ["server", "transport-io"] }
+schemars = "1"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -28,6 +37,10 @@ crate-type = ["lib", "cdylib", "staticlib"]
 [[bin]]
 name = "gargoyle"
 path = "src/main.rs"
+
+[[bin]]
+name = "gargoyle-mcp"
+path = "src/bin/gargoyle_mcp.rs"
 
 [dev-dependencies]
 proptest = "1"

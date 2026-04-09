@@ -1,9 +1,11 @@
 use rusqlite::{params, Connection};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use tracing::{instrument, warn};
 
 use crate::config::GargoyleConfig;
 use crate::error::{GargoyleError, Result};
+use crate::services::embeddings::ErasmusEmbeddings;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SearchResult {
@@ -87,27 +89,62 @@ impl IndexerService {
         Ok(results)
     }
 
-    /// Generate a deterministic mock embedding for an entity and store it.
+    /// Generate an embedding for an entity and store it.
     ///
-    /// Reads the entity's title, body_md, and canonical_fields, hashes them to
-    /// produce a 128-dimension f32 vector, then stores it in the embeddings table.
+    /// Uses real embeddings from Erasmus service when configured, otherwise
+    /// falls back to deterministic hash-based mock embeddings.
+    #[instrument(skip(conn), fields(entity_id = %entity_id))]
     pub fn generate_embedding(conn: &Connection, entity_id: &str) -> Result<()> {
         // Read entity title + body_md + canonical_fields
-        let (title, body_md, canonical_fields): (String, String, String) = conn.query_row(
-            "SELECT title, COALESCE(body_md, ''), canonical_fields FROM entities WHERE id = ?1",
-            params![entity_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
-                entity_type: "entity".to_string(),
-                id: entity_id.to_string(),
-            },
-            other => GargoyleError::Database(other),
-        })?;
+        let (title, body_md, canonical_fields): (String, String, String) = conn
+            .query_row(
+                "SELECT title, COALESCE(body_md, ''), canonical_fields FROM entities WHERE id = ?1",
+                params![entity_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
+                    entity_type: "entity".to_string(),
+                    id: entity_id.to_string(),
+                },
+                other => GargoyleError::Database(other),
+            })?;
 
         let config = &GargoyleConfig::global().indexer;
         let text = format!("{} {} {}", title, body_md, canonical_fields);
-        let vector = generate_mock_vector(&text, config.embedding_dimensions);
+
+        let (vector, model_name, dimensions) = if config.use_real_embeddings {
+            // Use real embeddings from Erasmus service
+            let embedder = ErasmusEmbeddings::with_timeout(
+                Some(config.embedder_url.clone()),
+                Some(config.embedding_model.clone()),
+                30,
+            );
+
+            let result = tokio::runtime::Handle::try_current()
+                .map(|handle| handle.block_on(embedder.embed(&text)))
+                .unwrap_or_else(|_| {
+                    // No tokio runtime, create one
+                    let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                        crate::services::embeddings::EmbeddingError::ServiceUnavailable(
+                            format!("Failed to create runtime: {}", e),
+                        )
+                    })?;
+                    rt.block_on(embedder.embed(&text))
+                })
+                .map_err(|e| GargoyleError::Schema(format!("Embedding failed: {}", e)))?;
+
+            (result.embedding, result.model, result.dimensions)
+        } else {
+            // Use mock hash-based embeddings for testing
+            let vector = generate_mock_vector(&text, config.embedding_dimensions);
+            (
+                vector,
+                config.embedding_model.clone(),
+                config.embedding_dimensions,
+            )
+        };
+
         let blob = vector_to_blob(&vector);
 
         // Delete old embedding first if exists
@@ -117,7 +154,9 @@ impl IndexerService {
         )?;
 
         let embedding_id = uuid::Uuid::new_v4().to_string();
-        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string();
 
         conn.execute(
             "INSERT INTO embeddings (embedding_id, entity_id, model, vector, dimensions, created_at)
@@ -125,9 +164,9 @@ impl IndexerService {
             params![
                 embedding_id,
                 entity_id,
-                &config.embedding_model,
+                model_name,
                 blob,
-                config.embedding_dimensions as i32,
+                dimensions as i32,
                 now,
             ],
         )?;
@@ -135,11 +174,12 @@ impl IndexerService {
         Ok(())
     }
 
-    /// Search by semantic similarity using mock embeddings.
+    /// Search by semantic similarity using embeddings.
     ///
     /// Generates a query vector from the input text, loads all embeddings,
     /// computes cosine similarity, filters by threshold, and returns the
     /// top results sorted by descending similarity.
+    #[instrument(skip(conn), fields(query_len = query.len(), limit = limit))]
     pub fn search_similar(
         conn: &Connection,
         query: &str,
@@ -147,7 +187,30 @@ impl IndexerService {
         threshold: Option<f64>,
     ) -> Result<Vec<SearchResult>> {
         let config = &GargoyleConfig::global().indexer;
-        let query_vector = generate_mock_vector(query, config.embedding_dimensions);
+
+        let query_vector = if config.use_real_embeddings {
+            let embedder = ErasmusEmbeddings::with_timeout(
+                Some(config.embedder_url.clone()),
+                Some(config.embedding_model.clone()),
+                30,
+            );
+
+            let result = tokio::runtime::Handle::try_current()
+                .map(|handle| handle.block_on(embedder.embed(query)))
+                .unwrap_or_else(|_| {
+                    let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                        crate::services::embeddings::EmbeddingError::ServiceUnavailable(
+                            format!("Failed to create runtime: {}", e),
+                        )
+                    })?;
+                    rt.block_on(embedder.embed(query))
+                })
+                .map_err(|e| GargoyleError::Schema(format!("Embedding failed: {}", e)))?;
+
+            result.embedding
+        } else {
+            generate_mock_vector(query, config.embedding_dimensions)
+        };
 
         // Load all embeddings with their entity info
         let mut stmt = conn.prepare(
@@ -184,9 +247,130 @@ impl IndexerService {
         }
 
         // Sort by similarity descending
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Return top `limit`
+        results.truncate(limit);
+        Ok(results)
+    }
+
+    // ── Async variants for use within a tokio runtime (MCP server) ────
+
+    // ── Async-safe helpers for use within tokio (MCP server) ──────────
+    //
+    // rusqlite::Connection is !Send, so we can't hold a &Connection across
+    // an .await. Instead, these functions split the work:
+    //   1. Read from DB (sync, before await)
+    //   2. Call embedding endpoint (async, the only await point)
+    //   3. Write to DB (sync, after await)
+
+    /// Embed text asynchronously — the only async part of embedding operations.
+    /// Returns (vector, model_name, dimensions).
+    pub async fn embed_text_async(text: &str) -> Result<(Vec<f32>, String, usize)> {
+        let config = &GargoyleConfig::global().indexer;
+        if config.use_real_embeddings {
+            let embedder = ErasmusEmbeddings::with_timeout(
+                Some(config.embedder_url.clone()),
+                Some(config.embedding_model.clone()),
+                30,
+            );
+            let result = embedder
+                .embed(text)
+                .await
+                .map_err(|e| GargoyleError::Schema(format!("Embedding failed: {}", e)))?;
+            Ok((result.embedding, result.model, result.dimensions))
+        } else {
+            let vector = generate_mock_vector(text, config.embedding_dimensions);
+            Ok((vector, config.embedding_model.clone(), config.embedding_dimensions))
+        }
+    }
+
+    /// Store a pre-computed embedding vector for an entity (sync, no HTTP call).
+    pub fn store_embedding(
+        conn: &Connection,
+        entity_id: &str,
+        vector: &[f32],
+        model_name: &str,
+        dimensions: usize,
+    ) -> Result<()> {
+        let blob = vector_to_blob(vector);
+        conn.execute("DELETE FROM embeddings WHERE entity_id = ?1", params![entity_id])?;
+
+        let embedding_id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+        conn.execute(
+            "INSERT INTO embeddings (embedding_id, entity_id, model, vector, dimensions, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![embedding_id, entity_id, model_name, blob, dimensions as i32, now],
+        )?;
+        Ok(())
+    }
+
+    /// Read entity text for embedding (sync). Returns the text to embed.
+    pub fn read_entity_text(conn: &Connection, entity_id: &str) -> Result<String> {
+        let (title, body_md, canonical_fields): (String, String, String) = conn
+            .query_row(
+                "SELECT title, COALESCE(body_md, ''), canonical_fields FROM entities WHERE id = ?1",
+                params![entity_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
+                    entity_type: "entity".to_string(),
+                    id: entity_id.to_string(),
+                },
+                other => GargoyleError::Database(other),
+            })?;
+        Ok(format!("{} {} {}", title, body_md, canonical_fields))
+    }
+
+    /// Semantic search with a pre-computed query vector (sync, no HTTP call).
+    pub fn search_similar_with_vector(
+        conn: &Connection,
+        query_vector: &[f32],
+        limit: usize,
+        threshold: Option<f64>,
+    ) -> Result<Vec<SearchResult>> {
+        let mut stmt = conn.prepare(
+            "SELECT emb.entity_id, emb.vector, e.title, e.entity_type
+             FROM embeddings emb
+             JOIN entities e ON e.id = emb.entity_id
+             WHERE e.deleted_at IS NULL",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            let entity_id: String = row.get(0)?;
+            let blob: Vec<u8> = row.get(1)?;
+            let title: String = row.get(2)?;
+            let entity_type: String = row.get(3)?;
+            Ok((entity_id, blob, title, entity_type))
+        })?;
+
+        let threshold_val = threshold.unwrap_or(-1.0);
+        let mut results: Vec<SearchResult> = Vec::new();
+
+        for row in rows {
+            let (entity_id, blob, title, entity_type) = row?;
+            let entity_vector = blob_to_vector(&blob);
+            let similarity = cosine_similarity(query_vector, &entity_vector);
+
+            if similarity >= threshold_val {
+                results.push(SearchResult {
+                    entity_id,
+                    title,
+                    entity_type,
+                    score: similarity,
+                });
+            }
+        }
+
+        results.sort_by(|a, b| {
+            b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         Ok(results)
     }
@@ -201,17 +385,19 @@ impl IndexerService {
     /// correctness.
     pub fn reindex_entity(conn: &Connection, entity_id: &str) -> Result<()> {
         // Verify the entity exists
-        let _exists: i64 = conn.query_row(
-            "SELECT rowid FROM entities WHERE id = ?1",
-            params![entity_id],
-            |row| row.get(0),
-        ).map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
-                entity_type: "entity".to_string(),
-                id: entity_id.to_string(),
-            },
-            other => GargoyleError::Database(other),
-        })?;
+        let _exists: i64 = conn
+            .query_row(
+                "SELECT rowid FROM entities WHERE id = ?1",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => GargoyleError::NotFound {
+                    entity_type: "entity".to_string(),
+                    id: entity_id.to_string(),
+                },
+                other => GargoyleError::Database(other),
+            })?;
 
         // Rebuild the entire FTS index from the content table.
         // This re-reads every row from `entities` and rebuilds entities_fts.
@@ -360,10 +546,17 @@ mod tests {
 
         // Search for "churn"
         let results = IndexerService::search_fts(&conn, "churn", 10).unwrap();
-        assert!(results.len() >= 2, "Expected at least 2 results for 'churn', got {}", results.len());
+        assert!(
+            results.len() >= 2,
+            "Expected at least 2 results for 'churn', got {}",
+            results.len()
+        );
 
         let ids: Vec<&str> = results.iter().map(|r| r.entity_id.as_str()).collect();
-        assert!(ids.contains(&"ent-002"), "Should find 'Customer Churn Analysis'");
+        assert!(
+            ids.contains(&"ent-002"),
+            "Should find 'Customer Churn Analysis'"
+        );
         assert!(ids.contains(&"ent-003"), "Should find 'Churn Rate'");
     }
 
@@ -448,14 +641,7 @@ mod tests {
     #[test]
     fn test_generate_embedding_replaces_old() {
         let conn = setup_db();
-        insert_entity(
-            &conn,
-            "ent-emb-002",
-            "metric",
-            "Replace Test",
-            "Body",
-            "{}",
-        );
+        insert_entity(&conn, "ent-emb-002", "metric", "Replace Test", "Body", "{}");
 
         IndexerService::generate_embedding(&conn, "ent-emb-002").unwrap();
         IndexerService::generate_embedding(&conn, "ent-emb-002").unwrap();
@@ -490,9 +676,30 @@ mod tests {
         let conn = setup_db();
 
         // Insert entities with varying titles
-        insert_entity(&conn, "sim-001", "metric", "Revenue Growth Rate", "Monthly revenue", "{}");
-        insert_entity(&conn, "sim-002", "metric", "Revenue Decline Rate", "Monthly decline", "{}");
-        insert_entity(&conn, "sim-003", "experiment", "Customer Churn Analysis", "Churn patterns", "{}");
+        insert_entity(
+            &conn,
+            "sim-001",
+            "metric",
+            "Revenue Growth Rate",
+            "Monthly revenue",
+            "{}",
+        );
+        insert_entity(
+            &conn,
+            "sim-002",
+            "metric",
+            "Revenue Decline Rate",
+            "Monthly decline",
+            "{}",
+        );
+        insert_entity(
+            &conn,
+            "sim-003",
+            "experiment",
+            "Customer Churn Analysis",
+            "Churn patterns",
+            "{}",
+        );
 
         // Generate embeddings for all
         IndexerService::generate_embedding(&conn, "sim-001").unwrap();
@@ -501,7 +708,13 @@ mod tests {
 
         // Search for something similar to "Revenue Growth Rate Monthly revenue {}"
         // The query text goes through the same hash, so an exact match should be most similar
-        let results = IndexerService::search_similar(&conn, "Revenue Growth Rate Monthly revenue {}", 10, None).unwrap();
+        let results = IndexerService::search_similar(
+            &conn,
+            "Revenue Growth Rate Monthly revenue {}",
+            10,
+            None,
+        )
+        .unwrap();
         assert!(!results.is_empty(), "Should return at least one result");
 
         // The top result should be the entity whose text hashes most similarly
@@ -514,13 +727,21 @@ mod tests {
     #[test]
     fn test_search_similar_self_is_perfect() {
         let conn = setup_db();
-        insert_entity(&conn, "self-001", "metric", "Exact Match Test", "body text", "{}");
+        insert_entity(
+            &conn,
+            "self-001",
+            "metric",
+            "Exact Match Test",
+            "body text",
+            "{}",
+        );
         IndexerService::generate_embedding(&conn, "self-001").unwrap();
 
         // Query with the exact same text that was used to generate the embedding
         // The embedding text is "title body_md canonical_fields" = "Exact Match Test body text {}"
         let results =
-            IndexerService::search_similar(&conn, "Exact Match Test body text {}", 10, None).unwrap();
+            IndexerService::search_similar(&conn, "Exact Match Test body text {}", 10, None)
+                .unwrap();
         assert_eq!(results.len(), 1);
         let score = results[0].score;
         assert!(
@@ -589,7 +810,14 @@ mod tests {
     #[test]
     fn test_reindex_entity() {
         let conn = setup_db();
-        insert_entity(&conn, "reidx-001", "metric", "Original Title", "Original body", "{}");
+        insert_entity(
+            &conn,
+            "reidx-001",
+            "metric",
+            "Original Title",
+            "Original body",
+            "{}",
+        );
         IndexerService::generate_embedding(&conn, "reidx-001").unwrap();
 
         // Verify FTS works before reindex
@@ -643,16 +871,25 @@ mod tests {
 
         // Orthogonal vectors have similarity 0
         let sim_ab = cosine_similarity(&a, &b);
-        assert!((sim_ab - 0.0).abs() < 1e-6, "Orthogonal vectors should have similarity 0");
+        assert!(
+            (sim_ab - 0.0).abs() < 1e-6,
+            "Orthogonal vectors should have similarity 0"
+        );
 
         // Identical vectors have similarity 1
         let sim_ac = cosine_similarity(&a, &c);
-        assert!((sim_ac - 1.0).abs() < 1e-6, "Identical vectors should have similarity 1");
+        assert!(
+            (sim_ac - 1.0).abs() < 1e-6,
+            "Identical vectors should have similarity 1"
+        );
 
         // Opposite vectors have similarity -1
         let d = vec![-1.0f32, 0.0, 0.0];
         let sim_ad = cosine_similarity(&a, &d);
-        assert!((sim_ad - (-1.0)).abs() < 1e-6, "Opposite vectors should have similarity -1");
+        assert!(
+            (sim_ad - (-1.0)).abs() < 1e-6,
+            "Opposite vectors should have similarity -1"
+        );
     }
 
     #[test]
@@ -660,6 +897,9 @@ mod tests {
         let original = vec![1.5f32, -2.3, 0.0, 42.0, -0.001];
         let blob = vector_to_blob(&original);
         let restored = blob_to_vector(&blob);
-        assert_eq!(original, restored, "Blob roundtrip should preserve exact values");
+        assert_eq!(
+            original, restored,
+            "Blob roundtrip should preserve exact values"
+        );
     }
 }

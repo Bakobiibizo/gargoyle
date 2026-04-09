@@ -106,10 +106,7 @@ impl DedupPipeline {
 
     /// Run the full 3-stage pipeline. This is the inner function that may error;
     /// `check_for_duplicates` wraps it to swallow errors.
-    fn run_pipeline(
-        conn: &Connection,
-        new_entity_id: &str,
-    ) -> Result<Vec<DedupSuggestion>> {
+    fn run_pipeline(conn: &Connection, new_entity_id: &str) -> Result<Vec<DedupSuggestion>> {
         // Load the new entity's type and title
         let (entity_type, title): (String, String) = conn
             .query_row(
@@ -160,7 +157,10 @@ impl DedupPipeline {
         }
 
         // Short-circuit: if Stage 1 found a high-confidence match, skip remaining stages
-        if suggestions.iter().any(|s| s.confidence >= config.exact_match_confidence) {
+        if suggestions
+            .iter()
+            .any(|s| s.confidence >= config.exact_match_confidence)
+        {
             return Ok(suggestions);
         }
 
@@ -196,7 +196,8 @@ impl DedupPipeline {
                 let is_lev_match = lev_distance <= config.levenshtein_max_distance;
 
                 // Criterion B: trigram (Jaccard) similarity
-                let is_trigram_match = trigram_similarity(&new_title_lower, &existing_title_lower) > config.trigram_similarity_threshold;
+                let is_trigram_match = trigram_similarity(&new_title_lower, &existing_title_lower)
+                    > config.trigram_similarity_threshold;
 
                 if is_lev_match || is_trigram_match {
                     found_ids.insert(existing_id.clone());
@@ -226,14 +227,18 @@ impl DedupPipeline {
                 return Ok(suggestions);
             }
 
-            let search_results =
-                match IndexerService::search_similar(conn, &title, 10, Some(config.embedding_proximity_threshold)) {
-                    Ok(results) => results,
-                    Err(_) => {
-                        // If similarity search fails, skip this stage
-                        return Ok(suggestions);
-                    }
-                };
+            let search_results = match IndexerService::search_similar(
+                conn,
+                &title,
+                10,
+                Some(config.embedding_proximity_threshold),
+            ) {
+                Ok(results) => results,
+                Err(_) => {
+                    // If similarity search fails, skip this stage
+                    return Ok(suggestions);
+                }
+            };
 
             for result in search_results {
                 // Skip self
@@ -435,7 +440,10 @@ mod tests {
         assert!(
             suggestions.is_empty(),
             "Cross-type matches must never be created. Got: {:?}",
-            suggestions.iter().map(|s| &s.existing_entity_id).collect::<Vec<_>>()
+            suggestions
+                .iter()
+                .map(|s| &s.existing_entity_id)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -465,7 +473,10 @@ mod tests {
 
         let fuzzy = fuzzy.unwrap();
         // Confidence is fixed at 0.70 for all fuzzy matches per spec
-        assert!((fuzzy.confidence - 0.70).abs() < f64::EPSILON, "Fuzzy confidence should be fixed at 0.70");
+        assert!(
+            (fuzzy.confidence - 0.70).abs() < f64::EPSILON,
+            "Fuzzy confidence should be fixed at 0.70"
+        );
         assert_eq!(fuzzy.existing_entity_id, "m-existing");
     }
 
@@ -511,7 +522,11 @@ mod tests {
 
         // The exact title match (confidence 0.95) triggers short-circuit,
         // so Stages 2 and 3 are skipped entirely. Only 1 suggestion.
-        assert_eq!(suggestions.len(), 1, "Short-circuit should yield exactly 1 suggestion");
+        assert_eq!(
+            suggestions.len(),
+            1,
+            "Short-circuit should yield exactly 1 suggestion"
+        );
         assert_eq!(suggestions[0].detection_method, DetectionMethod::ExactTitle);
         assert!((suggestions[0].confidence - 0.95).abs() < f64::EPSILON);
     }
@@ -628,8 +643,7 @@ mod tests {
             .unwrap();
 
         // Now pending should be fewer
-        let pending_after =
-            DedupPipeline::get_suggestions(&conn, Some("pending")).unwrap();
+        let pending_after = DedupPipeline::get_suggestions(&conn, Some("pending")).unwrap();
         assert_eq!(pending_after.len(), suggestions.len() - 1);
 
         let dismissed = DedupPipeline::get_suggestions(&conn, Some("dismissed")).unwrap();

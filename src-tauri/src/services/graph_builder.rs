@@ -248,7 +248,10 @@ pub fn audit_related_to(conn: &Connection) -> Result<AuditResult> {
             pct, threshold_pct
         );
         for b in &breakdown {
-            msg.push_str(&format!("\n  {} \u{2192} {}: {}", b.from_type, b.to_type, b.count));
+            msg.push_str(&format!(
+                "\n  {} \u{2192} {}: {}",
+                b.from_type, b.to_type, b.count
+            ));
         }
         msg.push_str("\n  Suggested: consider custom relation types for these patterns.");
         Some(msg)
@@ -401,8 +404,8 @@ fn fetch_edges_for_entity(conn: &Connection, entity_id: &str) -> Result<Vec<Grap
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use rusqlite::Connection;
+    use std::collections::HashMap;
 
     fn test_db() -> Connection {
         let conn = crate::db::connection::create_memory_connection().unwrap();
@@ -704,9 +707,13 @@ mod tests {
 
         let ids_to_reclassify: Vec<String> =
             vec!["r0".to_string(), "r1".to_string(), "r2".to_string()];
-        let reclassified =
-            reclassify_relations(&conn, "related_to", "custom:correlates_with", &ids_to_reclassify)
-                .unwrap();
+        let reclassified = reclassify_relations(
+            &conn,
+            "related_to",
+            "custom:correlates_with",
+            &ids_to_reclassify,
+        )
+        .unwrap();
         assert_eq!(reclassified, 3);
 
         // After reclassification: 2/10 = 20% => exactly at threshold
@@ -753,18 +760,16 @@ mod tests {
     fn test_approve_custom_type_rejects_non_custom_prefix() {
         let conn = test_db();
 
-        let result = approve_custom_type(
-            &conn,
-            "measures",
-            "Not a custom type",
-            &[],
-            &[],
-        );
+        let result = approve_custom_type(&conn, "measures", "Not a custom type", &[], &[]);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("custom:"), "Error should mention 'custom:' prefix requirement: {}", msg);
+        assert!(
+            msg.contains("custom:"),
+            "Error should mention 'custom:' prefix requirement: {}",
+            msg
+        );
     }
 
     #[test]
@@ -842,15 +847,13 @@ mod tests {
         assert_eq!(stats.total_relations, 4);
 
         // Entity type counts
-        let entity_map: HashMap<String, usize> =
-            stats.entity_type_counts.into_iter().collect();
+        let entity_map: HashMap<String, usize> = stats.entity_type_counts.into_iter().collect();
         assert_eq!(entity_map["metric"], 2);
         assert_eq!(entity_map["experiment"], 1);
         assert_eq!(entity_map["result"], 1);
 
         // Relation type counts
-        let rel_map: HashMap<String, usize> =
-            stats.relation_type_counts.into_iter().collect();
+        let rel_map: HashMap<String, usize> = stats.relation_type_counts.into_iter().collect();
         assert_eq!(rel_map["measures"], 2);
         assert_eq!(rel_map["related_to"], 1);
         assert_eq!(rel_map["produced"], 1);

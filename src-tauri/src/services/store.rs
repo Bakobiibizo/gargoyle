@@ -59,17 +59,16 @@ fn entity_from_row(row: &rusqlite::Row) -> rusqlite::Result<Entity> {
         rusqlite::Error::FromSqlConversionFailure(
             10,
             rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())),
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
         )
     })?;
 
     let canonical_fields: serde_json::Value =
         serde_json::from_str(&canonical_fields_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                11,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
+            rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     Ok(Entity {
@@ -120,38 +119,26 @@ fn run_from_row(row: &rusqlite::Row) -> rusqlite::Result<Run> {
     let patch_set_str: String = row.get(6)?;
     let status_str: String = row.get(7)?;
 
-    let inputs_snapshot: serde_json::Value =
-        serde_json::from_str(&inputs_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                4,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
-        })?;
+    let inputs_snapshot: serde_json::Value = serde_json::from_str(&inputs_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+    })?;
 
-    let outputs_snapshot: serde_json::Value =
-        serde_json::from_str(&outputs_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                5,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
-        })?;
+    let outputs_snapshot: serde_json::Value = serde_json::from_str(&outputs_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+    })?;
 
-    let patch_set: serde_json::Value =
-        serde_json::from_str(&patch_set_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                6,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
-        })?;
+    let patch_set: serde_json::Value = serde_json::from_str(&patch_set_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e))
+    })?;
 
     let status = parse_run_status(&status_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             7,
             rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())),
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
         )
     })?;
 
@@ -176,8 +163,7 @@ const ENTITY_SELECT_COLUMNS: &str =
 const RELATION_SELECT_COLUMNS: &str =
     "id, from_id, to_id, relation_type, weight, confidence, provenance_run_id, created_at";
 
-const RUN_SELECT_COLUMNS: &str =
-    "run_id, template_key, template_version, template_category, \
+const RUN_SELECT_COLUMNS: &str = "run_id, template_key, template_version, template_category, \
      inputs_snapshot, outputs_snapshot, patch_set, status, created_at";
 
 pub struct StoreService;
@@ -206,10 +192,7 @@ impl StoreService {
     }
 
     /// List entities by type (non-deleted only).
-    pub fn list_entities(
-        conn: &Connection,
-        entity_type: Option<&str>,
-    ) -> Result<Vec<Entity>> {
+    pub fn list_entities(conn: &Connection, entity_type: Option<&str>) -> Result<Vec<Entity>> {
         let (sql, param_values): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
             match entity_type {
                 Some(et) => (
@@ -308,10 +291,7 @@ impl StoreService {
 
     /// Get run by ID.
     pub fn get_run(conn: &Connection, run_id: &str) -> Result<Run> {
-        let sql = format!(
-            "SELECT {} FROM runs WHERE run_id = ?1",
-            RUN_SELECT_COLUMNS
-        );
+        let sql = format!("SELECT {} FROM runs WHERE run_id = ?1", RUN_SELECT_COLUMNS);
 
         conn.query_row(&sql, params![run_id], run_from_row)
             .map_err(|e| match e {
@@ -324,27 +304,24 @@ impl StoreService {
     }
 
     /// List runs, optionally filtered by template_key.
-    pub fn list_runs(
-        conn: &Connection,
-        template_key: Option<&str>,
-    ) -> Result<Vec<Run>> {
-        let (sql, param_values): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
-            match template_key {
-                Some(tk) => (
-                    format!(
-                        "SELECT {} FROM runs WHERE template_key = ?1 ORDER BY created_at DESC",
-                        RUN_SELECT_COLUMNS
-                    ),
-                    vec![Box::new(tk.to_string())],
+    pub fn list_runs(conn: &Connection, template_key: Option<&str>) -> Result<Vec<Run>> {
+        let (sql, param_values): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match template_key
+        {
+            Some(tk) => (
+                format!(
+                    "SELECT {} FROM runs WHERE template_key = ?1 ORDER BY created_at DESC",
+                    RUN_SELECT_COLUMNS
                 ),
-                None => (
-                    format!(
-                        "SELECT {} FROM runs ORDER BY created_at DESC",
-                        RUN_SELECT_COLUMNS
-                    ),
-                    vec![],
+                vec![Box::new(tk.to_string())],
+            ),
+            None => (
+                format!(
+                    "SELECT {} FROM runs ORDER BY created_at DESC",
+                    RUN_SELECT_COLUMNS
                 ),
-            };
+                vec![],
+            ),
+        };
 
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
@@ -360,10 +337,7 @@ impl StoreService {
     }
 
     /// Create a full entity with validation (convenience wrapper around apply_patch_set).
-    pub fn create_entity(
-        conn: &Connection,
-        payload: CreateEntityPayload,
-    ) -> Result<PatchResult> {
+    pub fn create_entity(conn: &Connection, payload: CreateEntityPayload) -> Result<PatchResult> {
         let patch_set = PatchSet {
             ops: vec![PatchOp::CreateEntity(payload)],
             run_id: uuid::Uuid::new_v4().to_string(),
@@ -372,10 +346,7 @@ impl StoreService {
     }
 
     /// Update entity with validation (convenience wrapper).
-    pub fn update_entity(
-        conn: &Connection,
-        payload: UpdateEntityPayload,
-    ) -> Result<PatchResult> {
+    pub fn update_entity(conn: &Connection, payload: UpdateEntityPayload) -> Result<PatchResult> {
         let patch_set = PatchSet {
             ops: vec![PatchOp::UpdateEntity(payload)],
             run_id: uuid::Uuid::new_v4().to_string(),
@@ -396,10 +367,7 @@ impl StoreService {
     }
 
     /// Create a claim (convenience wrapper).
-    pub fn create_claim(
-        conn: &Connection,
-        payload: CreateClaimPayload,
-    ) -> Result<PatchResult> {
+    pub fn create_claim(conn: &Connection, payload: CreateClaimPayload) -> Result<PatchResult> {
         let patch_set = PatchSet {
             ops: vec![PatchOp::CreateClaim(payload)],
             run_id: uuid::Uuid::new_v4().to_string(),
@@ -579,14 +547,7 @@ mod tests {
     #[test]
     fn test_get_entity_soft_deleted_not_returned() {
         let conn = test_db();
-        insert_test_entity(
-            &conn,
-            "ent-del",
-            "metric",
-            "Deleted Metric",
-            "manual",
-            "{}",
-        );
+        insert_test_entity(&conn, "ent-del", "metric", "Deleted Metric", "manual", "{}");
         // Soft-delete it
         let now = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.3fZ")
@@ -599,14 +560,23 @@ mod tests {
 
         let result = StoreService::get_entity(&conn, "ent-del");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), GargoyleError::NotFound { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            GargoyleError::NotFound { .. }
+        ));
     }
 
     #[test]
     fn test_get_entity_parses_all_source_variants() {
         let conn = test_db();
         let sources = vec![
-            "manual", "clipboard", "web", "import", "agent", "template", "bootstrap",
+            "manual",
+            "clipboard",
+            "web",
+            "import",
+            "agent",
+            "template",
+            "bootstrap",
         ];
         let expected = vec![
             Source::Manual,
@@ -697,7 +667,10 @@ mod tests {
         // Should no longer be found
         let result = StoreService::get_entity(&conn, "del-1");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), GargoyleError::NotFound { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            GargoyleError::NotFound { .. }
+        ));
     }
 
     #[test]
@@ -705,7 +678,10 @@ mod tests {
         let conn = test_db();
         let result = StoreService::delete_entity(&conn, "nonexistent");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), GargoyleError::NotFound { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            GargoyleError::NotFound { .. }
+        ));
     }
 
     #[test]
@@ -717,7 +693,10 @@ mod tests {
         // Deleting again should return NotFound
         let result = StoreService::delete_entity(&conn, "del-2");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), GargoyleError::NotFound { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            GargoyleError::NotFound { .. }
+        ));
     }
 
     // ========================================================================
@@ -851,7 +830,9 @@ mod tests {
 
         let metric_runs = StoreService::list_runs(&conn, Some("metric_snapshot")).unwrap();
         assert_eq!(metric_runs.len(), 2);
-        assert!(metric_runs.iter().all(|r| r.template_key == "metric_snapshot"));
+        assert!(metric_runs
+            .iter()
+            .all(|r| r.template_key == "metric_snapshot"));
 
         let exp_runs = StoreService::list_runs(&conn, Some("experiment_runner")).unwrap();
         assert_eq!(exp_runs.len(), 1);
@@ -950,10 +931,7 @@ mod tests {
 
         let result = StoreService::update_entity(&conn, payload).unwrap();
         assert_eq!(result.applied.len(), 1);
-        assert_eq!(
-            result.applied[0].entity_id.as_ref().unwrap(),
-            "upd-1"
-        );
+        assert_eq!(result.applied[0].entity_id.as_ref().unwrap(), "upd-1");
 
         let entity = StoreService::get_entity(&conn, "upd-1").unwrap();
         assert_eq!(entity.title, "New Title");
@@ -1090,7 +1068,10 @@ mod tests {
         // 6. Verify gone from get
         let get_result = StoreService::get_entity(&conn, entity_id);
         assert!(get_result.is_err());
-        assert!(matches!(get_result.unwrap_err(), GargoyleError::NotFound { .. }));
+        assert!(matches!(
+            get_result.unwrap_err(),
+            GargoyleError::NotFound { .. }
+        ));
     }
 
     #[test]

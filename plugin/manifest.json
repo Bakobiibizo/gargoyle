@@ -1,0 +1,169 @@
+{
+  "manifest_version": "0.3",
+  "name": "gargoyle",
+  "version": "0.1.0",
+  "description": "A graph memory database MCP server for agent memories and seeding context",
+  "long_description": "Gargoyle is a typed knowledge graph MCP server that provides persistent memory for AI agents. It stores entities (people, projects, decisions, notes, ideas, tasks, commitments) with structured canonical fields, rich markdown bodies, and graph relations between them.\n\n**KEY FEATURES**\n- **Typed Entity System**: Entities with canonical field schemas per type (note, idea, task, person, project, commitment, etc.)\n- **Full-Text Search**: FTS5-powered keyword search across all entity titles and bodies\n- **Semantic Search**: Embedding-based similarity search for finding conceptually related entities\n- **Graph Traversal**: BFS traversal to explore entity neighborhoods and discover connections\n- **Claims & Provenance**: Subject-predicate-object triples with evidence linking and run-based provenance\n- **Auto-Memory Hooks**: Python hooks that automatically search on every prompt and extract observations after every response\n- **Deduplication**: Built-in duplicate detection and merge suggestions\n\n**REQUIREMENTS**\n- **Gargoyle MCP binary** (Rust) — the core MCP server\n- **Python 3.10+** — for the auto-memory hook scripts\n- **httpx** — `pip install httpx`\n",
+  "author": {
+    "name": "Bakobiibizo",
+    "url": "https://github.com/bakobiibizo"
+  },
+  "homepage": "https://github.com/bakobiibizo/gargoyle",
+  "documentation": "https://github.com/bakobiibizo/gargoyle",
+  "icon": "assets/logo.png",
+  "screenshots": [],
+  "server": {
+    "type": "binary",
+    "entry_point": "${user_config.gargoyle_mcp_path}",
+    "mcp_config": {
+      "command": "${user_config.gargoyle_mcp_path}",
+      "args": [
+        "--db",
+        "${user_config.db_path}"
+      ],
+      "env": {
+        "GARGOYLE_DB_PATH": "${user_config.db_path}",
+        "ERASMUS_TEXT_URL": "${user_config.erasmus_text_url}",
+        "ERASMUS_EMBED_URL": "${user_config.erasmus_embed_url}"
+      }
+    }
+  },
+  "user_config": {
+    "db_path": {
+      "type": "string",
+      "title": "Database Path",
+      "description": "Path to the gargoyle SQLite database file",
+      "required": true,
+      "default": "D:/apps/gargoyle/src-tauri/gargoyle.db"
+    },
+    "gargoyle_mcp_path": {
+      "type": "string",
+      "title": "Gargoyle MCP Binary Path",
+      "description": "Path to the gargoyle-mcp executable",
+      "required": true
+    },
+    "erasmus_text_url": {
+      "type": "string",
+      "title": "Erasmus Text Inference URL",
+      "description": "OpenAI-compatible chat completions endpoint for keyword extraction and observation extraction",
+      "required": false,
+      "default": "https://text-erasmus.ngrok.dev/v1/chat/completions"
+    },
+    "erasmus_embed_url": {
+      "type": "string",
+      "title": "Erasmus Embedding URL",
+      "description": "Embedding endpoint for semantic similarity search",
+      "required": false,
+      "default": "https://erasmus.ngrok.dev/embed"
+    }
+  },
+  "tools": [
+    {
+      "name": "create_entity",
+      "description": "Create a typed entity in the knowledge graph with canonical fields (e.g. person, project, note, task, idea, commitment)"
+    },
+    {
+      "name": "get_entity",
+      "description": "Get an entity by its UUID"
+    },
+    {
+      "name": "update_entity",
+      "description": "Update an entity's fields with optimistic locking via expected_updated_at"
+    },
+    {
+      "name": "delete_entity",
+      "description": "Soft-delete an entity by UUID"
+    },
+    {
+      "name": "list_entities",
+      "description": "List all entities, optionally filtered by entity type"
+    },
+    {
+      "name": "search_fts",
+      "description": "Full-text search across all entities (title, body, canonical fields)"
+    },
+    {
+      "name": "search_similar",
+      "description": "Semantic similarity search using embeddings"
+    },
+    {
+      "name": "get_entity_graph",
+      "description": "BFS traversal of the entity graph from a starting node"
+    },
+    {
+      "name": "create_relation",
+      "description": "Create a typed relation (edge) between two entities"
+    },
+    {
+      "name": "get_relations",
+      "description": "Get all relations for an entity (both incoming and outgoing)"
+    },
+    {
+      "name": "list_claims",
+      "description": "List claims (subject-predicate-object triples), optionally filtered by evidence entity"
+    },
+    {
+      "name": "get_claim",
+      "description": "Get a specific claim by UUID"
+    },
+    {
+      "name": "promote_claim",
+      "description": "Promote a claim to a full entity in the knowledge graph"
+    },
+    {
+      "name": "apply_patch_set",
+      "description": "Apply a batch of atomic patch operations (create/update entities, relations, claims)"
+    },
+    {
+      "name": "check_duplicates",
+      "description": "Check an entity for potential duplicates in the knowledge graph"
+    },
+    {
+      "name": "list_dedup_suggestions",
+      "description": "List dedup suggestions, optionally filtered by status"
+    },
+    {
+      "name": "audit_relations",
+      "description": "Audit all relation types for consistency and report issues"
+    },
+    {
+      "name": "get_template",
+      "description": "Get a template definition by its key"
+    },
+    {
+      "name": "list_templates",
+      "description": "List available templates, optionally filtered by category"
+    },
+    {
+      "name": "get_context",
+      "description": "Get operational context value by key"
+    },
+    {
+      "name": "set_context",
+      "description": "Set operational context (key-value store for workflow state)"
+    }
+  ],
+  "compatibility": {
+    "platforms": [
+      "win32",
+      "linux",
+      "darwin"
+    ],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  },
+  "keywords": [
+    "knowledge-graph",
+    "memory",
+    "mcp",
+    "ai",
+    "entities",
+    "semantic-search"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bakobiibizo/gargoyle"
+  }
+}
