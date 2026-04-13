@@ -23,7 +23,15 @@
       "Bash(xargs:*)",
       "WebSearch",
       "Bash(grep:*)",
-      "Bash(git ls-tree:*)"
+      "Bash(git ls-tree:*)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:docs.rs)",
+      "mcp__gargoyle__search_fts",
+      "mcp__gargoyle__list_entities",
+      "Read(//c/Users/richa/AppData/Roaming/Claude/**)",
+      "Read(//c/Users/richa/AppData/Local/Claude/**)",
+      "Read(//c/Users/richa/AppData/**)"
     ]
   }
 }
